@@ -1,0 +1,28 @@
+services:
+  gotify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jefripunza/gotify:latest
+    container_name: gotify
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP + ACME http-01 solver + API
+      - "443:443"    # HTTPS (SPA + API)
+      - "3000:3000"  # plaintext dashboard (LAN)
+    volumes:
+      - gotify-data:/app/data
+    environment:
+      TZ: ${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  gotify-data:
+    # SQLite lives at /app/data/gotify.db
+    # SSL at /app/data/ssl/letsencrypt/<domain>/fullchain.pem + privkey.pem
+    # Or custom certs at /app/data/ssl/custom/<domain>.crt + .key

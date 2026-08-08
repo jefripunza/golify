@@ -1,0 +1,20 @@
+# build artifacts
+web/dist
+web/node_modules
+
+# git + IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# local-only files
+**/.env.local
+**/node_modules
+**/dist
+**/.DS_Store
+
+# backend build output
+run
+*.test
+*.out

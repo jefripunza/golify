@@ -1,0 +1,21 @@
+# backend build
+run
+*.test
+*.out
+data/
+
+# Go
+*.exe
+
+# FE
+web/node_modules
+web/dist
+
+# env
+.env
+.env.local
+
+# IDE
+.idea
+.vscode
+.DS_Store
