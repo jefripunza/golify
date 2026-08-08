@@ -36,16 +36,16 @@ FROM alpine:3.20
 
 # ca-certs for HTTPS ACME / outbound TLS, tzdata, and a non-root user
 RUN apk add --no-cache ca-certificates tzdata && \
-    addgroup -S gotify && adduser -S -G gotify gotify
+    addgroup -S golify && adduser -S -G golify golify
 
 WORKDIR /app
 COPY --from=be-builder /out/run /app/run
 
 # data/ holds the sqlite db and ssl/; mount this as a volume
 RUN mkdir -p /app/data/ssl/letsencrypt /app/data/ssl/custom && \
-    chown -R gotify:gotify /app
+    chown -R golify:golify /app
 
-USER gotify
+USER golify
 
 # three ports:
 #   80   → HTTP, ACME http-01 solver + API

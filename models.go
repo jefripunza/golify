@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-// Message represents a notification message stored in the gotify database.
+// Message represents a notification message stored in the golify database.
 type Message struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Title     string    `gorm:"size:255;not null;default:''" json:"title"`

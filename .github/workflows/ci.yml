@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # ─── Backend (Go Fiber v3) ───────────────────────────────────────────────
+  backend:
+    name: go build & vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download modules
+        working-directory: .
+        run: go mod download
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build (no embed)
+        # Skip embed by stubbing the web/dist dir with a placeholder so go:embed
+        # resolves cleanly when web/dist is absent in CI.
+        run: |
+          mkdir -p web/dist
+          [ -f web/dist/.keep ] || touch web/dist/.keep
+          go build -o /tmp/golify-bin .
+
+      - name: Smoke-test binary (no network)
+        run: |
+          GOTIFY_HTTP=:18080 GOTIFY_HTTPS=:18443 GOTIFY_FE=:13000 /tmp/golify-bin &
+          PID=$!
+          sleep 2
+          curl -fsS http://127.0.0.1:18080/api/v1/health
+          kill $PID || true
+          wait $PID 2>/dev/null || true
+
+  # ─── Frontend (Vue 3 + Vite) ─────────────────────────────────────────────
+  frontend:
+    name: vue build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install deps
+        working-directory: web
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      - name: Upload FE dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: fe-dist-${{ matrix.node }}
+          path: web/dist
+          if-no-files-found: error

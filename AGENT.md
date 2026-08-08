@@ -7,7 +7,7 @@
 
 ## 1. Project Overview
 
-**Nama**: gotify (repo `github.com/jefripunza/gotify`)
+**Nama**: golify (repo `github.com/jefripunza/golify`)
 **Owner**: Jefri Herdi Triyanto (CEO Sawang Tech, ex-Principal Engineer, S.T. Teknik Informatika, C.Me)
 **Tujuan**: Self-hosted push notification server, tapi FE berekspansi jadi **dashboard ala PaaS** (mirip Coolify tapi FE-only dulu, BE tetap notif server sampai milestone berikutnya).
 
@@ -38,7 +38,7 @@
 
 - FE di-build terpisah (Vite) → `web/dist/`
 - BE `go:embed all:web/dist` → single binary `run`
-- Runner stage pakai Alpine, non-root user `gotify`
+- Runner stage pakai Alpine, non-root user `golify`
 - 3-stage Dockerfile: `node:22-alpine` → `golang:1.25-alpine` → `alpine:3.20`
 
 ### Ports
@@ -52,7 +52,7 @@
 
 ```
 data/
-├── gotify.db              # SQLite (WAL, foreign_keys=ON)
+├── golify.db              # SQLite (WAL, foreign_keys=ON)
 └── ssl/
     ├── letsencrypt/
     │   ├── .acme/<token>  # ACME http-01 challenge files (certbot --webroot)
@@ -146,7 +146,7 @@ Catatan:
 
 ## 8. Env / Infra
 
-- Repo: `github.com/jefripunza/gotify` (branch `master`, default dari `auto_init=true`)
+- Repo: `github.com/jefripunza/golify` (branch `master`, default dari `auto_init=true`)
 - Auth GitHub: PAT di `/home/sawang/credentials/github_pat.txt` (format `github:ghp_...`)
 - Coolify: deployment handle Coolify, JANGAN setup tunnel manual untuk domain Coolify-managed
 - Browser: CAMOFOX port 9377 untuk browser automation (JANGAN pakai Playwright)
@@ -174,7 +174,7 @@ User sangat tidak suka over-engineering. Setelah 5+ workaround gagal, LAPORKAN a
 ## 11. Chat History Highlights (untuk context)
 
 ### Iterasi 1 (2026-08-08): Project init
-- User minta init repo `jefripunza/gotify`, Vue 3 (create-vue official) + GoFiber v3 + SQLite + Dockerfile multi-stage
+- User minta init repo `jefripunza/golify`, Vue 3 (create-vue official) + GoFiber v3 + SQLite + Dockerfile multi-stage
 - User confirm port: 3000 dashboard, 80 http/ACME, 443 https (handled by BE langsung)
 - Data folder harus volume-mounted agar sqlite tidak hilang
 

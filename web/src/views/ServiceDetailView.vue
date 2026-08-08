@@ -77,7 +77,7 @@ onMounted(() => {
   term.loadAddon(fit)
   term.open(termEl.value)
   fit.fit()
-  term.writeln('\x1b[36m─── gotify terminal ───\x1b[0m')
+  term.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
   term.writeln(`connected to service: ${service.value?.name ?? ''}`)
   term.writeln('NOTE: WS endpoint not implemented yet — this is an echo-only stub.')
   term.writeln('')

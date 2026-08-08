@@ -1,4 +1,4 @@
-# gotify
+# golify
 
 Self-hosted push notification server — Vue 3 SPA + Go (Fiber v3) backend with embedded frontend, JWT auth, GORM/SQLite storage.
 
@@ -39,7 +39,7 @@ Override via env: `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`.
 ```
 [1] node:22-alpine       npm run build  →  web/dist/
 [2] golang:1.25-alpine   go:embed web/dist + go build  →  run (single binary, FE bundled)
-[3] alpine:3.20          copy run, run as non-root `gotify`
+[3] alpine:3.20          copy run, run as non-root `golify`
 ```
 
 The container image only carries the BE binary; no Node runtime in production.
@@ -50,7 +50,7 @@ The container image only carries the BE binary; no Node runtime in production.
 /app/
 ├── run              # single Go binary, FE embedded via go:embed
 └── data/            # mounted as a Docker volume
-    ├── gotify.db          # SQLite (WAL mode, foreign_keys=ON)
+    ├── golify.db          # SQLite (WAL mode, foreign_keys=ON)
     └── ssl/
         ├── letsencrypt/   # <domain>/fullchain.pem + privkey.pem
         │                  #   plus .acme/<token> for ACME http-01 solver

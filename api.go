@@ -14,7 +14,7 @@ func registerAPI(r fiber.Router) {
 	v1.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status": "ok",
-			"app":    "gotify",
+			"app":    "golify",
 		})
 	})
 

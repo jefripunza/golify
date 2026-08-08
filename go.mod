@@ -1,4 +1,4 @@
-module github.com/jefripunza/gotify
+module github.com/jefripunza/golify
 
 go 1.25.0
 

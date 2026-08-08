@@ -28,7 +28,7 @@ import {
   mockVars,
 } from '@/lib/mock'
 
-const KEY = (name: string) => `gotify:${name}`
+const KEY = (name: string) => `golify:${name}`
 
 function load<T>(name: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback

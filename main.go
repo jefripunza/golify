@@ -84,7 +84,7 @@ func main() {
 	}
 
 	// GORM + SQLite (WAL + foreign keys)
-	dbPath := filepath.Join(dataDir, "gotify.db")
+	dbPath := filepath.Join(dataDir, "golify.db")
 	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	var err error
 	db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
@@ -156,7 +156,7 @@ func main() {
 
 func newFiber(label string) *fiber.App {
 	app := fiber.New(fiber.Config{
-		AppName:      "gotify-" + label,
+		AppName:      "golify-" + label,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	})
@@ -340,7 +340,7 @@ func issueToken(u User) (string, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
-			Issuer:    "gotify",
+			Issuer:    "golify",
 		},
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

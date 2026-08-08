@@ -87,22 +87,22 @@ export const mockProjects: Project[] = [
     ],
   },
   {
-    id: 'proj_gotify',
-    name: 'gotify',
+    id: 'proj_golify',
+    name: 'golify',
     description: 'Self-hosted push notification server (this project).',
     sourceId: 'src_github_main',
     createdAt: now(),
     environments: [
       envProd(
-        'env_prod_gotify',
+        'env_prod_golify',
         'production',
         [
-          svc('svc_gotify_run', 'gotify', 'compose', 'running', {
-            image: 'jefripunza/gotify:latest',
+          svc('svc_golify_run', 'golify', 'compose', 'running', {
+            image: 'jefripunza/golify:latest',
             ports: ['80:80', '443:443', '3000:3000'],
           }),
         ],
-        ['gotify.sawang.tech'],
+        ['golify.sawang.tech'],
       ),
     ],
   },
@@ -208,7 +208,7 @@ export const mockS3: S3Storage[] = [
     name: 'sawang-backups',
     endpoint: 'https://s3.jkt1.sawang.cloud',
     region: 'jkt1',
-    bucket: 'gotify-backups',
+    bucket: 'golify-backups',
     accessKeyId: 'AKIAJEXAMPLExxxx',
     isDefault: true,
     createdAt: now(),
