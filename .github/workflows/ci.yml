@@ -44,8 +44,15 @@ jobs:
         run: |
           GOTIFY_HTTP=:18080 GOTIFY_HTTPS=:18443 GOTIFY_FE=:13000 /tmp/golify-bin &
           PID=$!
-          sleep 2
-          curl -fsS http://127.0.0.1:18080/api/v1/health
+          # Seed runs many GORM inserts + opens a DB; give it 5s before curling.
+          for i in 1 2 3 4 5; do
+            sleep 1
+            if curl -fsS http://127.0.0.1:18080/api/v1/health 2>/dev/null; then
+              echo "\nhealth OK"
+              break
+            fi
+            echo "wait $i..."
+          done
           kill $PID || true
           wait $PID 2>/dev/null || true
 
