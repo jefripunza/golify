@@ -1,20 +1,23 @@
 # TODO
 
-Tracking rebranding `gotify` → `golify` + GitHub Action CI workflow.
+## Status: Sprint B selesai — BE CRUD Projects + FE swap ke API
 
-## Task
+## Task (selesai)
 
-- [x] Tulis TODO.md update untuk rebranding + CI
-- [x] Audit semua occurrence nama lama di repo
-- [x] Rename GitHub repo di GitHub via API
-- [x] Rename local folder + update git remote
-- [x] Update Go module path + semua string di source (BE + FE + docs)
-- [x] Update Docker image tag di `docker-compose.yaml`
-- [ ] Create `.github/workflows/ci.yml` (FE build matrix Node 22 + BE build+vet)
-- [x] Update AGENT.md + README.md
-- [ ] Buat Telegram topic baru "Golify.dev" via Bot API (BLOCKED — bot token belum ada di env; Pak perlu aktifkan dulu atau rename manual di Telegram group settings → topic Gotify.dev → edit name)
-- [x] Build verify (FE + BE) post-rebrand — npm run build OK, go build OK
-- [x] Commit & push — pushed to `jefripunza/golify` (commit `5a5ad6d`), CI run in progress at https://github.com/jefripunza/golify/actions/runs/31285042404
+### A: Cleanup & CI
+- [x] Rebuild image `localhost/golify:test` (pure-Go sqlite driver)
+- [x] Smoke test container — health OK, SPA OK, POST 401, message [] (non-root user + `:U` volume flag)
+- [x] Hapus db lama `gotify.db` dari volume
+- [x] CI workflow — go vet + go build + smoke test green (fix: stub web/dist before go vet)
+- [x] CI status: `31287444218` completed success (commit `3b6bf37`)
+- [x] fix `main.go`: CGO → `glebarez/sqlite` pure-Go; Dockerfile `/app/data` chmod 777; compose volume `:U`
+
+### B — BE CRUD Projects
+- [x] B1: Model GORM Project → Environment → Service → Domain (`models.go`) + AutoMigrate
+- [x] B2: REST API `/api/v1/projects` (CRUD) + nested envs + services + start/stop (`projects.go`)
+- [x] B3: Seed 3 project bila DB kosong (`seed.go`)
+- [x] B4: FE projects store swap mock → Colada query + ky authed() + DTO mapper (`api.ts`, `stores/index.ts`)
+- [x] B5: Build verify (go vet + vue-tsc clean), smoke test end-to-end, image rebuild, cleanup test container/volume
 
 ## Blocked
 
@@ -22,10 +25,10 @@ Tracking rebranding `gotify` → `golify` + GitHub Action CI workflow.
 
 ## Finish
 
-- GitHub repo: `github.com/jefripunza/gotify` → `github.com/jefripunza/golify` (rename via API)
-- Local folder: `~/gotify` → `~/golify`, git remote updated
-- Go module: `github.com/jefripunza/gotify` → `github.com/jefripunza/golify`
-- Strings replaced (38 occurrences across 12 files): AppName, db filename, JWT issuer, health response, Docker image/tag/container/volume, user/group, mock data, terminal banner, docs
-- CI workflow: `.github/workflows/ci.yml` — backend (go vet + go build + smoke-test) + frontend (matrix Node 22/24, build, upload artifact)
-- Build verify: `npm run build` exit 0, `go build` 26 MB single binary with FE embedded
-- Commit: `5a5ad6d rebrand: gotify → golify (repo, module, strings) + add ci workflow`
+- **BE**: `models.go` + `projects.go` + `seed.go` — hierarki Project→Env→Service→Domain lengkap (JWT-protected)
+  - `GET/POST /api/v1/projects/`, `GET/DELETE /api/v1/projects/:id` (nested preload envs+services+domains)
+  - `GET/POST /:projectId/environments`, `GET/POST /.../services`, `POST start/stop`
+  - Fix penting Fiber v3: login route HARUS decl sebelum `auth := v1.Group("", requireAuth)` (empty-prefix group middleware menimpa route setelahnya)
+- **FE**: projects store pakai `useQuery` Colada + fallback mock; `authed()` ky instance pakai Bearer token
+- Image `localhost/golify:test` build + container smoke test lulus
+- Container `golify-test` + volume test dihapus; volume `golify-data` (data real) dipertahankan

@@ -93,9 +93,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("gorm open: %v", err)
 	}
-	if err := db.AutoMigrate(&Message{}, &Application{}, &Client{}, &User{}); err != nil {
+	if err := db.AutoMigrate(&Message{}, &Application{}, &Client{}, &User{}, &Project{}, &Environment{}, &Service{}, &Domain{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
+	seedIfEmpty(db)
 	log.Printf("sqlite ready at %s (GORM)", dbPath)
 
 	// :80 — HTTP, ACME solver, API

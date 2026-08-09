@@ -27,6 +27,42 @@ func registerAPI(r fiber.Router) {
 		return c.JSON(rows)
 	})
 
+	// user auth (very basic; password hashing is intentionally left for production hardening).
+	// MUST be declared BEFORE the `auth` group below — Fiber v3 applies an empty-prefix
+	// group middleware to every route registered after it, including /auth/login.
+	v1.Post("/auth/login", func(c fiber.Ctx) error {
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		var u User
+		err := db.Where("username = ?", body.Username).First(&u).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+		}
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// NOTE: production should verify a hashed password (bcrypt/argon2)
+		if body.Password == "" {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
+		}
+		tok, err := issueToken(u)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"token": tok,
+			"user":  fiber.Map{"id": u.ID, "username": u.Username, "admin": u.Admin},
+		})
+	})
+
+	// PaaS-style dashboard CRUD (JWT-protected)
+	registerProjects(v1)
+
 	// authenticated routes
 	auth := v1.Group("", requireAuth)
 
@@ -85,36 +121,5 @@ func registerAPI(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(rows)
-	})
-
-	// user auth (very basic; password hashing is intentionally left for production hardening)
-	v1.Post("/auth/login", func(c fiber.Ctx) error {
-		var body struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err := c.Bind().JSON(&body); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-		}
-		var u User
-		err := db.Where("username = ?", body.Username).First(&u).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
-		}
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		// NOTE: production should verify a hashed password (bcrypt/argon2)
-		if body.Password == "" {
-			return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
-		}
-		tok, err := issueToken(u)
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.JSON(fiber.Map{
-			"token": tok,
-			"user":  fiber.Map{"id": u.ID, "username": u.Username, "admin": u.Admin},
-		})
 	})
 }
