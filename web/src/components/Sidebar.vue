@@ -16,7 +16,7 @@ import {
 import { useSidebar } from '@/composables/useSidebar'
 
 const route = useRoute()
-const { isMobileOpen, isMobileOpenRef, closeMobile } = useSidebar()
+const { isMobileOpen, closeMobile } = useSidebar()
 
 interface MenuItem {
   label: string
@@ -54,29 +54,68 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <!-- Backdrop overlay (mobile only) — placed behind the panel via z-index -->
-  <Transition name="fade">
-    <div
-      v-if="isMobileOpen"
-      class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
-      @click="closeMobile"
-    />
-  </Transition>
+  <!--
+    Mobile overlay + panel. Safari/iOS-safe approach:
+    - `v-if` (display:none when closed) — NO transform/transition dependency
+      for hiding, so Safari cannot get stuck showing an invisible panel.
+    - open animation: CSS @keyframes slideInRight (uses `transform`, which all
+      Safari versions support). Closing: quick fade via CSS class.
+  -->
 
-  <!-- Sidebar: persistent on desktop, slide-in panel on mobile -->
+  <!-- Backdrop (mobile only) -->
+  <div
+    v-if="isMobileOpen"
+    class="sidebar-backdrop fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+    @click="closeMobile"
+  />
+
+  <!-- Desktop sidebar: persistent, in-flow (md:flex parent row) -->
   <aside
-    :class="[
-      'flex flex-col border-border bg-card text-card-foreground',
-      // desktop: always visible, sticky, in-flow (md:flex parent = row)
-      'md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:border-r md:translate-x-0 md:opacity-100',
-      // mobile: fixed off-canvas to the right, slides in via CSS transition
-      'fixed top-0 right-0 z-50 h-screen w-72 border-l transition-transform transition-opacity duration-300 ease-out',
-      isMobileOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none md:pointer-events-auto',
-      // mobile-only when closed
-      'md:translate-x-0',
-    ]"
-    :aria-hidden="!isMobileOpen && (typeof window !== 'undefined' && window.innerWidth < 768)"
-    aria-label="Primary navigation"
+    class="hidden md:sticky md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:border-r md:border-border md:bg-card md:text-card-foreground"
+  >
+    <div class="flex items-center justify-between border-b border-border px-4 py-3">
+      <div class="flex items-center gap-2 font-semibold tracking-tight">
+        <span class="size-2 rounded-full bg-primary" />
+        <span>Golify</span>
+      </div>
+    </div>
+
+    <nav class="flex-1 overflow-y-auto px-2 py-3">
+      <div v-for="g in grouped" :key="g.id" class="mb-4">
+        <p class="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          {{ g.label }}
+        </p>
+        <ul class="grid gap-0.5">
+          <li v-for="item in g.items" :key="item.to">
+            <RouterLink
+              :to="item.to"
+              :class="[
+                'flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors',
+                isActive(item.to)
+                  ? 'bg-accent text-accent-foreground font-medium'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              ]"
+            >
+              <span class="flex items-center gap-2">
+                <component :is="item.icon" class="size-4" />
+                <span>{{ item.label }}</span>
+              </span>
+              <ChevronRight v-if="isActive(item.to)" class="size-3.5 opacity-60" />
+            </RouterLink>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <div class="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+      <p>v0.1.0 · build FE-only</p>
+    </div>
+  </aside>
+
+  <!-- Mobile sidebar panel: v-if + CSS animation (Safari-safe) -->
+  <div
+    v-if="isMobileOpen"
+    class="sidebar-mobile fixed right-0 top-0 z-50 flex h-full w-72 flex-col border-l border-border bg-card text-card-foreground"
   >
     <div class="flex items-center justify-between border-b border-border px-4 py-3">
       <div class="flex items-center gap-2 font-semibold tracking-tight">
@@ -85,7 +124,7 @@ function isActive(to: string) {
       </div>
       <button
         type="button"
-        class="rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
+        class="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
         aria-label="Close menu"
         @click="closeMobile"
       >
@@ -124,16 +163,26 @@ function isActive(to: string) {
     <div class="border-t border-border px-4 py-3 text-xs text-muted-foreground">
       <p>v0.1.0 · build FE-only</p>
     </div>
-  </aside>
+  </div>
 </template>
 
 <style>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s ease;
+/* Backdrop fade (Safari-safe) */
+.sidebar-backdrop {
+  animation: sidebar-fade-in 0.2s ease-out;
 }
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+@keyframes sidebar-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Mobile panel slide-in from right (Safari-safe: uses transform + keyframes) */
+.sidebar-mobile {
+  animation: sidebar-slide-in 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+@keyframes sidebar-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
 </style>

@@ -18,28 +18,13 @@ function logout() {
 
 <template>
   <!--
-    Single sticky topbar across breakpoints. On mobile, the layout is:
-      [hamburger] [title]                      [logout]
-    On desktop:
-      [title]                       [health] [user] [logout]
-    The hamburger is rendered FIRST in the DOM so it is never overlapped by
-    other absolutely-positioned UI, and it sits at z-50 above the sticky
-    header (z-30). The button is type="button" to avoid form-submit defaults,
-    has explicit aria-label, and uses active:scale for tap feedback.
+    Sticky topbar. On mobile the hamburger sits at the RIGHT (per Pak Jefri's
+    preference), title at left, logout on the right of the hamburger.
+    Desktop keeps health pill + username + logout on the right, no hamburger.
   -->
   <header
     class="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-card/80 px-4 backdrop-blur"
   >
-    <button
-      type="button"
-      class="relative z-50 inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card shadow-sm transition-transform active:scale-95 md:hidden"
-      aria-label="Open menu"
-      data-testid="sidebar-toggle"
-      @click="toggleMobile"
-    >
-      <Menu class="size-5" />
-    </button>
-
     <div class="flex flex-1 items-center gap-2 text-sm text-muted-foreground">
       <span>Golify Dashboard</span>
     </div>
@@ -67,16 +52,27 @@ function logout() {
       </button>
     </div>
 
-    <!-- Mobile-only logout (no health/user pill to keep the bar compact) -->
-    <button
-      v-if="auth.user"
-      type="button"
-      class="ml-auto inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card md:hidden"
-      aria-label="Sign out"
-      title="Sign out"
-      @click="logout"
-    >
-      <LogOut class="size-4" />
-    </button>
+    <!-- Mobile actions: [logout] [hamburger] — hamburger on the RIGHT -->
+    <div class="flex items-center gap-2 md:hidden">
+      <button
+        v-if="auth.user"
+        type="button"
+        class="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card active:scale-95"
+        aria-label="Sign out"
+        title="Sign out"
+        @click="logout"
+      >
+        <LogOut class="size-4" />
+      </button>
+      <button
+        type="button"
+        class="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card shadow-sm transition-transform active:scale-95"
+        aria-label="Open menu"
+        data-testid="sidebar-toggle"
+        @click="toggleMobile"
+      >
+        <Menu class="size-5" />
+      </button>
+    </div>
   </header>
 </template>
