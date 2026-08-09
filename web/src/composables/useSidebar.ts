@@ -1,58 +1,42 @@
-import { ref, watch } from 'vue'
-import gsap from 'gsap'
+import { ref, computed, readonly } from 'vue'
 
-const isMobileOpen = ref(false)
+// Mobile sidebar state — singleton ref shared across every useSidebar() call.
+// The ref is intentionally module-level so all components see the same value.
+// We attach GSAP-free logic only; Sidebar.vue handles the slide animation
+// with a pure CSS transition (avoids the GSAP-vs-class race that broke the
+// first mobile click on iOS Safari).
 
-function openMobile() {
-  isMobileOpen.value = true
+const g = globalThis as unknown as { __golifySidebar?: { open: ReturnType<typeof ref<boolean>> } }
+if (!g.__golifySidebar) {
+  g.__golifySidebar = { open: ref(false) }
 }
+const isMobileOpen = g.__golifySidebar.open
 
-function closeMobile() {
-  isMobileOpen.value = false
-}
+function openMobile() { isMobileOpen.value = true }
+function closeMobile() { isMobileOpen.value = false }
+function toggleMobile() { isMobileOpen.value = !isMobileOpen.value }
 
-function toggleMobile() {
-  isMobileOpen.value = !isMobileOpen.value
-}
-
-// Animate the sidebar panel with GSAP whenever isMobileOpen flips.
-// We control via class toggle + gsap.fromTo for crisp enter/leave.
-watch(isMobileOpen, (open) => {
-  if (typeof window === 'undefined') return
-  if (window.innerWidth >= 768) return // desktop: no animation
-  const el = document.querySelector<HTMLElement>('aside.sidebar-mobile-open, aside.sidebar-mobile-closed')
-  if (!el) return
-  gsap.killTweensOf(el)
-  if (open) {
-    gsap.fromTo(
-      el,
-      { x: '100%', opacity: 0 },
-      { x: '0%', opacity: 1, duration: 0.32, ease: 'power3.out' },
-    )
-  } else {
-    gsap.fromTo(
-      el,
-      { x: '0%', opacity: 1 },
-      { x: '100%', opacity: 0, duration: 0.28, ease: 'power3.in' },
-    )
-  }
-})
-
-// ESC key + scroll lock while open
+// ESC closes; idempotent handler (HMR-safe).
 if (typeof window !== 'undefined') {
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isMobileOpen.value) closeMobile()
-  })
+  const w = window as unknown as { __golifySidebarKeyHandler?: boolean }
+  if (!w.__golifySidebarKeyHandler) {
+    w.__golifySidebarKeyHandler = true
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMobileOpen.value) closeMobile()
+    })
+  }
 }
-
-watch(isMobileOpen, (open) => {
-  if (typeof document === 'undefined') return
-  document.body.style.overflow = open ? 'hidden' : ''
-})
 
 export function useSidebar() {
-  return { isMobileOpen: readonly(isMobileOpen), openMobile, closeMobile, toggleMobile }
+  return {
+    isMobileOpen: readonly(isMobileOpen),
+    openMobile,
+    closeMobile,
+    toggleMobile,
+    // mutable alias (used by v-if on overlay, kept for backwards compat)
+    isMobileOpenRef: computed({
+      get: () => isMobileOpen.value,
+      set: (v: boolean) => { isMobileOpen.value = v },
+    }),
+  }
 }
-
-// re-export `ref` is a no-op (workaround for tree-shake hint)
-import { readonly } from 'vue'

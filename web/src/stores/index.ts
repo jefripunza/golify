@@ -1,9 +1,8 @@
-// Domain stores. Backend-backed via Colada for all 9 menus.
+// Domain stores. Backend-backed via manual fetch + watchEffect for all 9 menus.
 // local/mock data remains as fallback when BE is unreachable (no auth yet).
 
 import { defineStore } from 'pinia'
-import { computed } from 'vue'
-import { useQuery } from '@pinia/colada'
+import { ref, computed, watchEffect } from 'vue'
 import type {
   ApiKey,
   Environment,
@@ -30,23 +29,39 @@ import {
 } from '@/lib/mock'
 import { authed } from '@/lib/api'
 
-// ─── generic list query helper ────────────────────────────────────────────
-// Returns { data (computed), status } with mock fallback on any failure.
-function useList<T>(path: string, fallback: T[], map: (raw: unknown) => T) {
-  const q = useQuery<T[], Error>({
-    key: [path],
-    query: async () => {
-      try {
-        const rows = await authed().get(path).json<unknown[]>()
-        return rows.map(map)
-      } catch {
-        return fallback
-      }
-    },
-    staleTime: 30_000,
+// ─── generic list resource helper ─────────────────────────────────────────
+// Returns { items, refresh, pending, error } with mock fallback on any failure.
+// Runs fetch() immediately in setup scope and re-runs whenever the auth token
+// changes (so login / logout refetches).
+function useResourceList<T>(path: string, fallback: T[], map: (raw: any) => T) {
+  const items = ref<T[]>([])
+  const pending = ref(false)
+  const error = ref<unknown>(null)
+
+  async function fetchOnce() {
+    pending.value = true
+    error.value = null
+    try {
+      const rows = await authed().get(path).json<any[]>()
+      const mapped: T[] = []
+      for (const r of rows) mapped.push(map(r))
+      items.value = mapped
+    } catch (e) {
+      error.value = e
+      items.value = fallback
+    } finally {
+      pending.value = false
+    }
+  }
+
+  // Auto-fetch on mount + re-fetch whenever localStorage auth changes (login/logout).
+  watchEffect(() => {
+    // touch the auth key so reactivity re-runs on login/logout
+    void authed()
+    fetchOnce()
   })
-  const data = computed(() => q.data.value ?? fallback)
-  return { ...q, data }
+
+  return { items, pending, error, refresh: fetchOnce }
 }
 
 // ─── BE DTO → FE type mappers (snake_case → camelCase) ──────────────────
@@ -86,6 +101,7 @@ function mapApiKey(d: any): ApiKey {
 function mapMcp(d: any): MCPEndpoint {
   return { id: String(d.id), name: d.name, url: d.url, transport: d.transport ?? 'http', apiKeyId: String(d.api_key_id ?? ''), enabled: d.enabled ?? true, createdAt: d.created_at }
 }
+function safeParse(x: string) { try { return JSON.parse(x) } catch { return {} } }
 function mapTeam(d: any): Team {
   return {
     id: String(d.id), name: d.name, description: d.description ?? '', createdAt: d.created_at,
@@ -93,7 +109,6 @@ function mapTeam(d: any): Team {
     permissions: typeof d.permissions === 'string' ? safeParse(d.permissions) : (d.permissions ?? {}),
   }
 }
-function safeParse(x: string) { try { return JSON.parse(x) } catch { return {} } }
 
 // ─── Projects ──────────────────────────────────────────────────────────────
 
@@ -132,19 +147,20 @@ function mapProject(p: any): Project {
 }
 
 export const useProjectsStore = defineStore('projects', () => {
-  const q = useQuery<any[], Error>({
-    key: ['projects'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/projects/').json<any[]>()
-        return rows
-      } catch {
-        return []
-      }
-    },
-    staleTime: 30_000,
-  })
-  const projects = computed<Project[]>(() => (q.data.value ?? []).map(mapProject))
+  const raw = ref<any[]>([])
+  const pending = ref(false)
+  const error = ref<unknown>(null)
+  async function fetchOnce() {
+    pending.value = true
+    error.value = null
+    try {
+      raw.value = await authed().get('api/v1/projects/').json<any[]>()
+    } catch (e) { error.value = e; raw.value = [] }
+    finally { pending.value = false }
+  }
+  watchEffect(() => { void authed(); fetchOnce() })
+
+  const projects = computed<Project[]>(() => raw.value.map(mapProject))
 
   function get(id: string): Project | undefined { return projects.value.find((p) => p.id === id) }
   function getEnv(projectId: string, envId: string): Environment | undefined {
@@ -162,134 +178,59 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, get, getEnv, getService, start, stop, ...q }
+  return { projects, pending, error, get, getEnv, getService, start, stop, refresh: fetchOnce }
 })
 
-// ─── Servers ────────────────────────────────────────────────────────────────
+// ─── Servers ───────────────────────────────────────────────────────────────
 export const useServersStore = defineStore('servers', () => {
-  const q = useQuery<Server[], any>({
-    key: ['servers'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/servers').json<any[]>()
-        return rows.map(mapServer)
-      } catch { return mockServers }
-    },
-    staleTime: 30_000,
-  })
-  const servers = computed(() => q.data.value ?? [])
+  const { items: servers, pending, error, refresh } = useResourceList<Server>('api/v1/servers', mockServers, mapServer)
   const onlineCount = computed(() => servers.value.filter((s) => s.status === 'online').length)
   function get(id: string) { return servers.value.find((s) => s.id === id) }
-  return { servers, get, onlineCount, ...q }
+  return { servers, onlineCount, pending, error, get, refresh }
 })
 
-// ─── Sources ────────────────────────────────────────────────────────────────
+// ─── Sources ───────────────────────────────────────────────────────────────
 export const useSourcesStore = defineStore('sources', () => {
-  const q = useQuery<Source[], any>({
-    key: ['sources'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/sources').json<any[]>()
-        return rows.map(mapSource)
-      } catch { return mockSources }
-    },
-    staleTime: 30_000,
-  })
-  const sources = computed(() => q.data.value ?? [])
-  return { sources, ...q }
+  const { items: sources, pending, error, refresh } = useResourceList<Source>('api/v1/sources', mockSources, mapSource)
+  return { sources, pending, error, refresh }
 })
 
 // ─── S3 ─────────────────────────────────────────────────────────────────────
 export const useS3Store = defineStore('s3', () => {
-  const q = useQuery<S3Storage[], any>({
-    key: ['s3'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/s3').json<any[]>()
-        return rows.map(mapS3)
-      } catch { return mockS3 }
-    },
-    staleTime: 30_000,
-  })
-  const items = computed(() => q.data.value ?? [])
-  return { items, ...q }
+  const { items, pending, error, refresh } = useResourceList<S3Storage>('api/v1/s3', mockS3, mapS3)
+  return { items, pending, error, refresh }
 })
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 export const useVarsStore = defineStore('vars', () => {
-  const q = useQuery<SharedVariable[], any>({
-    key: ['variables'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/variables').json<any[]>()
-        return rows.map(mapVar)
-      } catch { return mockVars }
-    },
-    staleTime: 30_000,
-  })
-  const items = computed(() => q.data.value ?? [])
+  const { items, pending, error, refresh } = useResourceList<SharedVariable>('api/v1/variables', mockVars, mapVar)
   function scopeItems(scope: SharedVariable['scope'], scopeRef?: string) {
     return items.value.filter((v) => v.scope === scope && (!scopeRef || v.scopeRef === scopeRef))
   }
-  return { items, scopeItems, ...q }
+  return { items, scopeItems, pending, error, refresh }
 })
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
 export const useKeysStore = defineStore('keys', () => {
-  const q = useQuery<Key[], any>({
-    key: ['keys'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/keys').json<any[]>()
-        return rows.map(mapKey)
-      } catch { return mockKeys }
-    },
-    staleTime: 30_000,
-  })
-  const keys = computed(() => q.data.value ?? [])
-  return { keys, ...q }
+  const { items: keys, pending, error, refresh } = useResourceList<Key>('api/v1/keys', mockKeys, mapKey)
+  return { keys, pending, error, refresh }
 })
 
 // ─── API Keys & MCP ─────────────────────────────────────────────────────────
 export const useApiMcpStore = defineStore('apiMcp', () => {
-  const ak = useQuery<ApiKey[], any>({
-    key: ['api-keys'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/api-keys').json<any[]>()
-        return rows.map(mapApiKey)
-      } catch { return mockApiKeys }
-    },
-    staleTime: 30_000,
-  })
-  const mcpQ = useQuery<MCPEndpoint[], any>({
-    key: ['mcp'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/mcp').json<any[]>()
-        return rows.map(mapMcp)
-      } catch { return mockMCP }
-    },
-    staleTime: 30_000,
-  })
-  const apiKeys = computed(() => ak.data.value ?? [])
-  const mcp = computed(() => mcpQ.data.value ?? [])
-  return { apiKeys, mcp, ...ak, ...mcpQ }
+  const ak = useResourceList<ApiKey>('api/v1/api-keys', mockApiKeys, mapApiKey)
+  const mcp = useResourceList<MCPEndpoint>('api/v1/mcp', mockMCP, mapMcp)
+  return {
+    apiKeys: ak.items, mcp: mcp.items,
+    pending: computed(() => ak.pending.value || mcp.pending.value),
+    error: computed(() => ak.error.value ?? mcp.error.value ?? null),
+    refresh: async () => { await Promise.all([ak.refresh(), mcp.refresh()]) },
+  }
 })
 
 // ─── Teams ──────────────────────────────────────────────────────────────────
 export const useTeamsStore = defineStore('teams', () => {
-  const q = useQuery<Team[], any>({
-    key: ['teams'],
-    query: async () => {
-      try {
-        const rows = await authed().get('api/v1/teams').json<any[]>()
-        return rows.map(mapTeam)
-      } catch { return mockTeams }
-    },
-    staleTime: 30_000,
-  })
-  const teams = computed(() => q.data.value ?? [])
+  const { items: teams, pending, error, refresh } = useResourceList<Team>('api/v1/teams', mockTeams, mapTeam)
   function get(id: string) { return teams.value.find((t) => t.id === id) }
-  return { teams, get, ...q }
+  return { teams, pending, error, get, refresh }
 })

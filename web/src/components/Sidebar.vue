@@ -16,7 +16,7 @@ import {
 import { useSidebar } from '@/composables/useSidebar'
 
 const route = useRoute()
-const { isMobileOpen, closeMobile } = useSidebar()
+const { isMobileOpen, isMobileOpenRef, closeMobile } = useSidebar()
 
 interface MenuItem {
   label: string
@@ -54,29 +54,37 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <!-- Overlay (mobile only) -->
-  <div
-    v-show="isMobileOpen"
-    class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
-    @click="closeMobile"
-  />
+  <!-- Backdrop overlay (mobile only) — placed behind the panel via z-index -->
+  <Transition name="fade">
+    <div
+      v-if="isMobileOpen"
+      class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+      @click="closeMobile"
+    />
+  </Transition>
 
+  <!-- Sidebar: persistent on desktop, slide-in panel on mobile -->
   <aside
     :class="[
-      'bg-card text-card-foreground border-border flex flex-col',
-      // desktop: persistent
-      'md:sticky md:top-0 md:h-screen md:w-60 md:border-r md:shrink-0',
-      // mobile: fixed, gsap-controlled (slide from right to center)
-      'fixed top-0 right-0 z-50 h-screen w-72 border-l',
-      isMobileOpen ? 'sidebar-mobile-open' : 'sidebar-mobile-closed',
+      'flex flex-col border-border bg-card text-card-foreground',
+      // desktop: always visible, sticky, in-flow (md:flex parent = row)
+      'md:sticky md:top-0 md:h-screen md:w-60 md:shrink-0 md:border-r md:translate-x-0 md:opacity-100',
+      // mobile: fixed off-canvas to the right, slides in via CSS transition
+      'fixed top-0 right-0 z-50 h-screen w-72 border-l transition-transform transition-opacity duration-300 ease-out',
+      isMobileOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none md:pointer-events-auto',
+      // mobile-only when closed
+      'md:translate-x-0',
     ]"
+    :aria-hidden="!isMobileOpen && (typeof window !== 'undefined' && window.innerWidth < 768)"
+    aria-label="Primary navigation"
   >
     <div class="flex items-center justify-between border-b border-border px-4 py-3">
       <div class="flex items-center gap-2 font-semibold tracking-tight">
         <span class="size-2 rounded-full bg-primary" />
-        <span>Gotify</span>
+        <span>Golify</span>
       </div>
       <button
+        type="button"
         class="rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
         aria-label="Close menu"
         @click="closeMobile"
@@ -120,14 +128,12 @@ function isActive(to: string) {
 </template>
 
 <style>
-/* Mobile slide-in from right to center, controlled by GSAP */
-.sidebar-mobile-open {
-  transform: translateX(0%);
-  opacity: 1;
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
 }
-.sidebar-mobile-closed {
-  transform: translateX(100%);
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
-  pointer-events: none;
 }
 </style>

@@ -5,7 +5,7 @@ import Topbar from '@/components/Topbar.vue'
 </script>
 
 <template>
-  <div class="bg-background text-foreground min-h-screen md:flex">
+  <div class="min-h-screen bg-background text-foreground md:flex">
     <Sidebar />
     <div class="flex min-w-0 flex-1 flex-col">
       <Topbar />
