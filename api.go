@@ -29,6 +29,10 @@ func registerAPI(r fiber.Router) {
 	// after it, including /auth/login).
 	v1.Post("/auth/login", loginHandler)
 
+	// onboarding: public — status + first-admin creation (only while users table is empty)
+	v1.Get("/auth/status", authStatusHandler)
+	v1.Post("/auth/onboard", onboardHandler)
+
 	// PaaS-style dashboard CRUD (JWT-protected)
 	registerProjects(v1)
 

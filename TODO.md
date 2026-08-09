@@ -1,31 +1,18 @@
-# TODO
+# Golify TODO
 
-## Status: Local dev live — https://golify.jefripunza.com via Cloudflare Tunnel
-
-## Task (selesai)
-
-### E — Run lokal + tunnel
-- [x] vite.config.ts: tambah proxy /ws → :20004 (ws:true), allowedHosts golify.jefripunza.com, host 0.0.0.0
-- [x] package.json dev: vite --host 0.0.0.0
-- [x] ServiceDetailView: WS pakai location.host (same-origin, lewat proxy)
-- [x] Go build ./run
-- [x] Run ./run :20001/:20003/:20002/:20004 (BE+WS)
-- [x] Run npm run dev (Vite :5173)
-- [x] Tunnel AI Agent ingress golify.jefripunza.com → http://127.0.0.1:5173 (PUT v41)
-- [x] DNS CNAME golify.jefripunza.com → 9c46bad2.cfargotunnel.com
-- [x] Restart cloudflared-tunnel
-
-### Verifikasi
-- https://golify.jefripunza.com/ → 200
-- https://golify.jefripunza.com/api/v1/health → {"app":"golify","status":"ok"}
-- https://golify.jefripunza.com/api/v1/auth/login admin/bismillah → token
-- https://golify.jefripunza.com/ws/health → {"app":"golify-ws","status":"ok"}
-- WS handshake :443 → HTTP/1.1 101 Switching Protocols
+## Task
+- [x] R1: Fix logout — hapus token + redirect ke login (global guard)
+- [x] R2: Halaman 404 + error boundary (stack + tombol copy)
+- [x] R3: BE — auth/status + auth/onboard, User pakai email (admin pertama)
+- [x] R4: FE — OnboardingView wizard (welcome → admin account), Zod strong password
+- [x] R5: FE — LoginView ganti username→email + Zod validasi
+- [x] R6: Router — /onboarding, /login, /404 + guard onboarding
+- [x] R7: WS backend integrasi + smoke test end-to-end
 
 ## Blocked
-(none)
+- (none)
 
 ## Finish
-- Local FE+BE live, publik lewat Cloudflare Tunnel
-- Vite proxy: /api → BE :20001, /ws → BE :20004
-- WS xterm bisa diakses dari browser publik
+- [x] Smoke test BE: status → onboard (weak=400, valid=201) → status onboarded=true → re-onboard=409 → login email=200 → login username lama=401 → ws health=ok
+- [x] Browser: logout → /login + token hilang; login email → dashboard
+- [x] FE build + BE build hijau

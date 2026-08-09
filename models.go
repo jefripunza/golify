@@ -32,6 +32,7 @@ type Client struct {
 type User struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Username  string    `gorm:"size:255;not null;uniqueIndex" json:"username"`
+	Email     string    `gorm:"size:255;not null;default:'';uniqueIndex" json:"email"`
 	Passhash  string    `gorm:"size:255;not null" json:"-"`
 	Admin     bool      `gorm:"not null;default:false" json:"admin"`
 	CreatedAt time.Time `json:"created_at"`

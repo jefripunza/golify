@@ -12,11 +12,11 @@ export const useAuthStore = defineStore('auth', () => {
   const user = computed(() => auth.value?.user ?? null)
   const isAdmin = computed(() => !!auth.value?.user.admin)
 
-  async function login(username: string, password: string): Promise<void> {
+  async function login(email: string, password: string): Promise<void> {
     const res = await fetch('/api/v1/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password }),
     })
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string }

@@ -13,7 +13,7 @@ export const AUTH_KEY = 'golify:auth'
 
 export interface AuthState {
   token: string
-  user: { id: number; username: string; admin: boolean }
+  user: { id: number; username: string; email?: string; admin: boolean }
 }
 
 export function getAuth(): AuthState | null {

@@ -8,10 +8,10 @@ import (
 
 // seedIfEmpty inserts starter dashboard data the first time a fresh volume
 // is mounted. Only runs when Projects is empty, so existing data is never
-// overwritten. Also seeds a default admin user (username: admin / password: bismillah)
-// when no users exist yet — for local first-boot convenience.
+// overwritten.
+// NOTE: no default admin is seeded — the FIRST user is created via the
+// onboarding flow (POST /api/v1/auth/onboard), which sets Admin=true.
 func seedIfEmpty(db *gorm.DB) {
-	seedAdmin(db)
 	seedProjects(db)
 	seedServers(db)
 	seedSources(db)
@@ -23,21 +23,6 @@ func seedIfEmpty(db *gorm.DB) {
 }
 
 func logSeed(s string) { println("[seed] " + s) }
-
-// ─── admin user ────────────────────────────────────────────────────────────
-func seedAdmin(db *gorm.DB) {
-	var count int64
-	if err := db.Model(&User{}).Count(&count).Error; err != nil || count > 0 {
-		return
-	}
-	// Passhash intentionally left as the plaintext value for the local
-	// dev convenience user. Production should bcrypt.
-	if err := db.Create(&User{Username: "admin", Passhash: "bismillah", Admin: true}).Error; err != nil {
-		logSeed("admin user failed: " + err.Error())
-		return
-	}
-	logSeed("admin user created (username: admin, password: bismillah)")
-}
 
 // ─── projects (sawang.tech-website, golify, hindsight-agent-memory) ────────
 func seedProjects(db *gorm.DB) {
