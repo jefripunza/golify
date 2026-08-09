@@ -18,9 +18,18 @@ export default defineConfig({
     },
   },
   server: {
+    port: 5173,
+    strictPort: true,
+    host: '0.0.0.0',
+    allowedHosts: ['golify.jefripunza.com'],
     proxy: {
       // proxy /api to the Go backend in dev
       '/api': 'http://127.0.0.1:20001',
+      // proxy /ws (xterm WebSocket) to the Go WS server in dev
+      '/ws': {
+        target: 'http://127.0.0.1:20004',
+        ws: true,
+      },
     },
   },
 })

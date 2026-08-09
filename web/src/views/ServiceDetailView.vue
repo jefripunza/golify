@@ -79,10 +79,10 @@ onMounted(() => {
   term.open(termEl.value)
   fit.fit()
 
-  // connect to the real WS exec endpoint
+  // connect to the real WS exec endpoint (same-origin — dev: vite proxies /ws → :20004)
   const auth = getAuth()
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${location.hostname}:20004/ws/exec?token=${encodeURIComponent(auth?.token ?? '')}&service_id=${encodeURIComponent(serviceId.value)}`
+  const url = `${proto}//${location.host}/ws/exec?token=${encodeURIComponent(auth?.token ?? '')}&service_id=${encodeURIComponent(serviceId.value)}`
   try {
     ws = new WebSocket(url)
   } catch {
