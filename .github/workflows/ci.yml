@@ -25,7 +25,11 @@ jobs:
         run: go mod download
 
       - name: go vet
-        run: go vet ./...
+        working-directory: .
+        run: |
+          go version
+          ls -la
+          go vet ./...
 
       - name: Build (no embed)
         # Skip embed by stubbing the web/dist dir with a placeholder so go:embed
