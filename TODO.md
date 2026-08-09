@@ -1,34 +1,47 @@
 # TODO
 
-## Status: Sprint B selesai — BE CRUD Projects + FE swap ke API
+## Status: Sprint C selesai — Login + BE CRUD 7 menu + FE full swap API
 
 ## Task (selesai)
 
-### A: Cleanup & CI
-- [x] Rebuild image `localhost/golify:test` (pure-Go sqlite driver)
-- [x] Smoke test container — health OK, SPA OK, POST 401, message [] (non-root user + `:U` volume flag)
-- [x] Hapus db lama `gotify.db` dari volume
-- [x] CI workflow — go vet + go build + smoke test green (fix: stub web/dist before go vet)
-- [x] CI status: `31287444218` completed success (commit `3b6bf37`)
-- [x] fix `main.go`: CGO → `glebarez/sqlite` pure-Go; Dockerfile `/app/data` chmod 777; compose volume `:U`
+### C1 — Model GORM 7 menu
+- [x] models.go: Server, Source, S3Storage, SharedVariable, Key, ApiKey, McpEndpoint, Team + TeamMember
+- [x] AutoMigrate semua model baru
 
-### B — BE CRUD Projects
-- [x] B1: Model GORM Project → Environment → Service → Domain (`models.go`) + AutoMigrate
-- [x] B2: REST API `/api/v1/projects` (CRUD) + nested envs + services + start/stop (`projects.go`)
-- [x] B3: Seed 3 project bila DB kosong (`seed.go`)
-- [x] B4: FE projects store swap mock → Colada query + ky authed() + DTO mapper (`api.ts`, `stores/index.ts`)
-- [x] B5: Build verify (go vet + vue-tsc clean), smoke test end-to-end, image rebuild, cleanup test container/volume
+### C2 — BE CRUD 7 menu (infra.go)
+- [x] GET/POST/PATCH/DELETE untuk servers, sources, s3, variables, keys, api-keys, mcp, teams
+- [x] helper generik: createGeneric, getGeneric, patchGeneric, deleteGeneric
+- [x] registerInfra(v1) di api.go sebelum group auth
+
+### C3 — Seed lengkap
+- [x] seedAdmin: user admin/bismillah bila users kosong
+- [x] seedServers 3, seedSources 3, seedS3 2, seedVariables 5, seedKeys 2, seedApiKeysAndMcp 2+2, seedTeams 2 (+members)
+
+### C4 — FE Login + auth + guard
+- [x] stores/auth.ts (login/logout via fetch + localStorage AUTH_KEY)
+- [x] views/LoginView.vue (form admin/bismillah, error inline)
+- [x] router guard beforeEnter → redirect /login (semua route kecuali /login)
+- [x] Topbar: logout button + username + fix "Golify Dashboard"
+
+### C5 — FE full swap mock → API
+- [x] Semua 9 store pakai Colada useQuery + authed() ky + mapper DTO
+- [x] Fallback mock di catch bila BE unreachable
+
+### C6 — Verify & push
+- [x] go vet OK, vue-tsc OK, npm build OK
+- [x] Image rebuild + container smoke test:
+  - health {app:golify,status:ok}
+  - login admin/bismillah → token
+  - 9 endpoint list 200 (projects 3, servers 3, sources 3, s3 2, variables 5, keys 2, api-keys 2, mcp 2, teams 2)
+  - POST servers → 201
+  - SPA fallback /login+/projects → index.html
+- [x] Cleanup container + volume test
 
 ## Blocked
-
 (none)
 
 ## Finish
-
-- **BE**: `models.go` + `projects.go` + `seed.go` — hierarki Project→Env→Service→Domain lengkap (JWT-protected)
-  - `GET/POST /api/v1/projects/`, `GET/DELETE /api/v1/projects/:id` (nested preload envs+services+domains)
-  - `GET/POST /:projectId/environments`, `GET/POST /.../services`, `POST start/stop`
-  - Fix penting Fiber v3: login route HARUS decl sebelum `auth := v1.Group("", requireAuth)` (empty-prefix group middleware menimpa route setelahnya)
-- **FE**: projects store pakai `useQuery` Colada + fallback mock; `authed()` ky instance pakai Bearer token
-- Image `localhost/golify:test` build + container smoke test lulus
-- Container `golify-test` + volume test dihapus; volume `golify-data` (data real) dipertahankan
+- Feat besar: dashboard lengkap backend-backed (semua 9 menu)
+- Login screen dengan user admin seeded otomatis
+- /api/v1/{servers,sources,s3,variables,keys,api-keys,mcp,teams} CRUD JWT-protected
+- Sistem seed otomatis hanya bila DB kosong (tidak overwrite data)

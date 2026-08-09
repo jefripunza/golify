@@ -85,3 +85,106 @@ type Domain struct {
 	Host          string    `gorm:"size:255;not null" json:"host"`
 	CreatedAt     time.Time `json:"created_at"`
 }
+
+// ─── Infrastructure / Security models (menus Servers..Teams) ──────────────
+
+// Server is a deploy target registered in the dashboard.
+type Server struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"size:255;not null" json:"name"`
+	Host        string    `gorm:"size:255;not null" json:"host"`
+	IP          string    `gorm:"size:64;default:''" json:"ip"`
+	Region      string    `gorm:"size:64;default:''" json:"region"`
+	Provider    string    `gorm:"size:32;default:'self-hosted'" json:"provider"`
+	Status      string    `gorm:"size:16;default:'unknown'" json:"status"`
+	CPU         float64   `gorm:"default:0" json:"cpu"`
+	Memory      int64     `gorm:"default:0" json:"memory"`      // MB used
+	MemoryTotal int64     `gorm:"default:0" json:"memory_total"` // MB total
+	Disk        float64   `gorm:"default:0" json:"disk"`         // % used
+	Containers  int       `gorm:"default:0" json:"containers"`
+	KeyID       uint      `gorm:"default:0" json:"key_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Source is a VCS repo / git provider connection.
+type Source struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"size:255;not null" json:"name"`
+	Provider  string    `gorm:"size:32;not null" json:"provider"`
+	URL       string    `gorm:"size:512;not null" json:"url"`
+	IsGlobal  bool      `gorm:"not null;default:false" json:"is_global"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// S3Storage is an object-storage backup target.
+type S3Storage struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"size:255;not null" json:"name"`
+	Endpoint    string    `gorm:"size:512;not null" json:"endpoint"`
+	Region      string    `gorm:"size:64;default:''" json:"region"`
+	Bucket      string    `gorm:"size:255;not null" json:"bucket"`
+	AccessKeyID string    `gorm:"size:255;not null" json:"access_key_id"`
+	IsDefault   bool      `gorm:"not null;default:false" json:"is_default"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// SharedVariable is a global/project/env/service scoped key-value.
+type SharedVariable struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Key       string    `gorm:"size:255;not null" json:"key"`
+	Value     string    `gorm:"size:4096;default:''" json:"value"`
+	IsSecret  bool      `gorm:"not null;default:false" json:"is_secret"`
+	Scope     string    `gorm:"size:32;not null;default:'global'" json:"scope"`
+	ScopeRef  uint      `gorm:"default:0" json:"scope_ref"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Key is an SSH public key (private key never stored in DB).
+type Key struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"size:255;not null" json:"name"`
+	PublicKey   string    `gorm:"size:4096;not null" json:"public_key"`
+	Fingerprint string    `gorm:"size:255;default:''" json:"fingerprint"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ApiKey is a token for CI / external automation.
+type ApiKey struct {
+	ID         uint       `gorm:"primaryKey" json:"id"`
+	Name       string     `gorm:"size:255;not null" json:"name"`
+	Prefix     string     `gorm:"size:64;not null" json:"prefix"`
+	Scopes     []string   `gorm:"serializer:json" json:"scopes"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// McpEndpoint is an MCP server registered in the dashboard.
+type McpEndpoint struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"size:255;not null" json:"name"`
+	URL       string    `gorm:"size:512;not null" json:"url"`
+	Transport string    `gorm:"size:16;default:'http'" json:"transport"`
+	ApiKeyID  uint      `gorm:"default:0" json:"api_key_id"`
+	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Team + members (RBAC).
+type Team struct {
+	ID          uint         `gorm:"primaryKey" json:"id"`
+	Name        string       `gorm:"size:255;not null" json:"name"`
+	Description string       `gorm:"size:1024;default:''" json:"description"`
+	Permissions string       `gorm:"type:text;default:'{}'" json:"permissions"` // JSON map
+	Members     []TeamMember `gorm:"constraint:OnDelete:CASCADE" json:"members,omitempty"`
+	CreatedAt   time.Time    `json:"created_at"`
+}
+
+type TeamMember struct {
+	ID       uint      `gorm:"primaryKey" json:"id"`
+	TeamID   uint      `gorm:"not null;index" json:"team_id"`
+	Email    string    `gorm:"size:255;not null" json:"email"`
+	Role     string    `gorm:"size:32;not null;default:'viewer'" json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}

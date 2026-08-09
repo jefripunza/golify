@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { Menu, Bell } from '@lucide/vue'
+import { Menu, Bell, LogOut } from '@lucide/vue'
+import { useRouter } from 'vue-router'
 import { useSidebar } from '@/composables/useSidebar'
 import { useHealth } from '@/stores/health'
+import { useAuthStore } from '@/stores/auth'
 
 const { openMobile } = useSidebar()
 const health = useHealth()
+const auth = useAuthStore()
+const router = useRouter()
+
+function logout() {
+  auth.logout()
+  router.replace({ name: 'login' })
+}
 </script>
 
 <template>
@@ -22,10 +31,10 @@ const health = useHealth()
 
     <div class="flex items-center gap-2 text-sm text-muted-foreground">
       <Bell class="size-4" />
-      <span>Gotify Dashboard</span>
+      <span>Golify Dashboard</span>
     </div>
 
-    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+    <div class="flex items-center gap-3 text-xs text-muted-foreground">
       <span
         :class="[
           'size-2 rounded-full',
@@ -35,6 +44,15 @@ const health = useHealth()
       <code class="rounded bg-muted px-1.5 py-0.5">
         {{ health.data.value?.app ?? '...' }}
       </code>
+      <span v-if="auth.user" class="rounded bg-muted px-1.5 py-0.5">{{ auth.user.username }}</span>
+      <button
+        class="rounded-md border border-border p-1.5 hover:bg-muted"
+        aria-label="Sign out"
+        title="Sign out"
+        @click="logout"
+      >
+        <LogOut class="size-3.5" />
+      </button>
     </div>
   </header>
 </template>

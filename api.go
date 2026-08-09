@@ -63,6 +63,9 @@ func registerAPI(r fiber.Router) {
 	// PaaS-style dashboard CRUD (JWT-protected)
 	registerProjects(v1)
 
+	// 7 other dashboard menus (servers, sources, s3, variables, keys, api-keys, mcp, teams)
+	registerInfra(v1)
+
 	// authenticated routes
 	auth := v1.Group("", requireAuth)
 
