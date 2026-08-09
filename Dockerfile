@@ -43,7 +43,8 @@ COPY --from=be-builder /out/run /app/run
 
 # data/ holds the sqlite db and ssl/; mount this as a volume
 RUN mkdir -p /app/data/ssl/letsencrypt /app/data/ssl/custom && \
-    chown -R golify:golify /app
+    chown -R golify:golify /app && \
+    chmod -R 777 /app/data
 
 USER golify
 

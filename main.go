@@ -37,7 +37,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	gormlogger "gorm.io/gorm/logger"
 	"gorm.io/gorm"
 )

@@ -11,7 +11,7 @@ services:
       - "443:443"    # HTTPS (SPA + API)
       - "3000:3000"  # plaintext dashboard (LAN)
     volumes:
-      - golify-data:/app/data
+      - golify-data:/app/data:U
     environment:
       TZ: ${TZ:-UTC}
     healthcheck:
