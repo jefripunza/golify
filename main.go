@@ -141,6 +141,17 @@ func main() {
 		}
 	}()
 
+	// :20004 — WebSocket exec (xterm shells), default
+	wsCtx, wsCancel := context.WithCancel(context.Background())
+	defer wsCancel()
+	go func() {
+		bindWS := envOr("GOTIFY_WS", ":20004")
+		log.Printf("WS listening on %s (/ws/exec)", bindWS)
+		if err := startWSServer(wsCtx); err != nil {
+			log.Printf("ws server: %v", err)
+		}
+	}()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig

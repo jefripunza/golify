@@ -1,47 +1,46 @@
 # TODO
 
-## Status: Sprint C selesai — Login + BE CRUD 7 menu + FE full swap API
+## Status: Sprint D selesai — bcrypt auth + WebSocket xterm + podman control
 
 ## Task (selesai)
 
-### C1 — Model GORM 7 menu
-- [x] models.go: Server, Source, S3Storage, SharedVariable, Key, ApiKey, McpEndpoint, Team + TeamMember
-- [x] AutoMigrate semua model baru
+### D1 — bcrypt hardening
+- [x] auth.go: hashPassword/checkPassword (bcrypt cost 10)
+- [x] login handler verify bcrypt + lazy migration plaintext→bcrypt
+- [x] POST /api/v1/auth/login (public)
+- [x] PATCH /api/v1/auth/password (JWT, ganti password sendiri)
+- [x] POST /api/v1/admin/auth/register (admin only)
+- [x] Verified: wrong pass 401, change pass works, restore works
 
-### C2 — BE CRUD 7 menu (infra.go)
-- [x] GET/POST/PATCH/DELETE untuk servers, sources, s3, variables, keys, api-keys, mcp, teams
-- [x] helper generik: createGeneric, getGeneric, patchGeneric, deleteGeneric
-- [x] registerInfra(v1) di api.go sebelum group auth
+### D2 — WebSocket exec
+- [x] ws.go: fasthttp native server di :20004 (GOTIFY_WS)
+- [x] /ws/exec?token=<jwt>&service_id=<id> — auth via JWT query
+- [x] podman exec -it golify-svc-<id> /bin/sh (fallback docker, lalu host /bin/sh)
+- [x] /ws/health endpoint
+- [x] Verified: handshake 101, 401 tanpa token
 
-### C3 — Seed lengkap
-- [x] seedAdmin: user admin/bismillah bila users kosong
-- [x] seedServers 3, seedSources 3, seedS3 2, seedVariables 5, seedKeys 2, seedApiKeysAndMcp 2+2, seedTeams 2 (+members)
+### D3 — FE xterm → WS
+- [x] ServiceDetailView: WebSocket real ke :20004, onData → ws.send, onmessage → term.write
+- [x] ws.close on unmount
+- [x] vue-tsc + npm build OK
 
-### C4 — FE Login + auth + guard
-- [x] stores/auth.ts (login/logout via fetch + localStorage AUTH_KEY)
-- [x] views/LoginView.vue (form admin/bismillah, error inline)
-- [x] router guard beforeEnter → redirect /login (semua route kecuali /login)
-- [x] Topbar: logout button + username + fix "Golify Dashboard"
+### D4 — podman start/stop/restart
+- [x] setServiceStatus → containerAction (podman/docker CLI)
+- [x] Fallback DB status flip bila runtime tidak ada (CI-safe)
+- [x] POST .../services/:id/{start,stop,restart}
+- [x] restart → DB status "running"
+- [x] Verified: podman create golify-svc-1 real container
 
-### C5 — FE full swap mock → API
-- [x] Semua 9 store pakai Colada useQuery + authed() ky + mapper DTO
-- [x] Fallback mock di catch bila BE unreachable
-
-### C6 — Verify & push
-- [x] go vet OK, vue-tsc OK, npm build OK
-- [x] Image rebuild + container smoke test:
-  - health {app:golify,status:ok}
-  - login admin/bismillah → token
-  - 9 endpoint list 200 (projects 3, servers 3, sources 3, s3 2, variables 5, keys 2, api-keys 2, mcp 2, teams 2)
-  - POST servers → 201
-  - SPA fallback /login+/projects → index.html
-- [x] Cleanup container + volume test
+### D5 — Verify & push
+- [x] go vet OK, vue-tsc OK
+- [x] Smoke: login, start/stop/restart, ws health
+- [ ] CI hijau
 
 ## Blocked
 (none)
 
 ## Finish
-- Feat besar: dashboard lengkap backend-backed (semua 9 menu)
-- Login screen dengan user admin seeded otomatis
-- /api/v1/{servers,sources,s3,variables,keys,api-keys,mcp,teams} CRUD JWT-protected
-- Sistem seed otomatis hanya bila DB kosong (tidak overwrite data)
+- Auth bcrypt penuh (login, ganti password, register admin)
+- Terminal xterm via WebSocket ke container real
+- Kontrol container (start/stop/restart) via podman/docker CLI
+- WS port terpisah :20004 (GOTIFY_WS env)

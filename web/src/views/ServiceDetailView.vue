@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProjectsStore } from '@/stores'
+import { getAuth } from '@/lib/api'
 import {
   Play,
   Square,
@@ -77,55 +78,46 @@ onMounted(() => {
   term.loadAddon(fit)
   term.open(termEl.value)
   fit.fit()
-  term.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
-  term.writeln(`connected to service: ${service.value?.name ?? ''}`)
-  term.writeln('NOTE: WS endpoint not implemented yet — this is an echo-only stub.')
-  term.writeln('')
-  term.write('$ ')
-  term.onData((data) => {
-    if (!term) return
-    if (data === '\r') {
-      term.writeln('')
-      const cmd = buffer.trim()
-      buffer = ''
-      runLocal(cmd)
-      term.write('$ ')
-    } else if (data === '\u007f') {
-      if (buffer.length > 0) {
-        term.write('\b \b')
-        buffer = buffer.slice(0, -1)
-      }
-    } else {
-      buffer += data
-      term.write(data)
+
+  // connect to the real WS exec endpoint
+  const auth = getAuth()
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const url = `${proto}//${location.hostname}:20004/ws/exec?token=${encodeURIComponent(auth?.token ?? '')}&service_id=${encodeURIComponent(serviceId.value)}`
+  try {
+    ws = new WebSocket(url)
+  } catch {
+    ws = null
+  }
+  if (ws) {
+    ws.onopen = () => {
+      term?.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
+      term?.writeln(`connected to service: ${service.value?.name ?? serviceId.value} via WS`)
+      term?.writeln('')
     }
+    ws.onmessage = (ev) => term?.write(String(ev.data))
+    ws.onclose = () => {
+      term?.writeln('\r\n\x1b[31m[connection closed]\x1b[0m')
+    }
+    ws.onerror = () => {
+      term?.writeln('\r\n\x1b[31m[websocket error]\x1b[0m')
+    }
+  } else {
+    term.writeln('\x1b[31mWS not available — check server :20004\x1b[0m')
+  }
+  term.onData((data) => {
+    ws?.send(data)
   })
 })
 
-let buffer = ''
-function runLocal(cmd: string) {
-  appendLog(`$ ${cmd}`)
-  if (!cmd) return
-  if (cmd === 'clear') {
-    term?.clear()
-    return
-  }
-  if (cmd === 'status') {
-    term?.writeln(`status: ${service.value?.status ?? 'unknown'}`)
-    return
-  }
-  if (cmd.startsWith('echo ')) {
-    term?.writeln(cmd.slice(5))
-    return
-  }
-  term?.writeln(`\x1b[31munknown command:\x1b[0m ${cmd}`)
-}
+let ws: WebSocket | null = null
 
 watch(termEl, () => {
   setTimeout(() => fit?.fit(), 0)
 })
 
 onBeforeUnmount(() => {
+  ws?.close()
+  ws = null
   term?.dispose()
   term = null
   fit = null
