@@ -88,6 +88,7 @@ async function submit() {
           There are no accounts yet, so this is a fresh install. You'll create the
           administrator account in the next step.
         </p>
+        <Button type="button" class="w-full" @click="nextStep">Get started →</Button>
       </div>
 
       <!-- Step 1: admin account -->
