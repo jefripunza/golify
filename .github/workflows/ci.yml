@@ -24,6 +24,12 @@ jobs:
         working-directory: .
         run: go mod download
 
+      - name: Stub web/dist (so go:embed resolves)
+        # go:embed in main.go requires web/dist to exist at compile time.
+        run: |
+          mkdir -p web/dist
+          [ -f web/dist/.keep ] || touch web/dist/.keep
+
       - name: go vet
         working-directory: .
         run: |
@@ -31,13 +37,8 @@ jobs:
           ls -la
           go vet ./...
 
-      - name: Build (no embed)
-        # Skip embed by stubbing the web/dist dir with a placeholder so go:embed
-        # resolves cleanly when web/dist is absent in CI.
-        run: |
-          mkdir -p web/dist
-          [ -f web/dist/.keep ] || touch web/dist/.keep
-          go build -o /tmp/golify-bin .
+      - name: Build
+        run: go build -o /tmp/golify-bin .
 
       - name: Smoke-test binary (no network)
         run: |
