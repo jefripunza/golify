@@ -74,37 +74,42 @@ function requireAuth() {
 }
 
 // ── Global guard:
-//   1. If there's a stored token, the app routes are allowed.
-//   2. Unauthenticated users get sent to /login (or /onboarding if the
-//      backend reports no users yet).
-let onboardingChecked = false
-let needsOnboarding = false
-
+//   1. Token present → app routes allowed; login/onboarding → dashboard.
+//   2. No token → check /auth/status EACH navigation (no cache — so the
+//      state after onboarding/logout is always correct):
+//      - not onboarded → /login and everything else redirect to /onboarding
+//      - onboarded → /onboarding redirects to /login; other routes → /login
 router.beforeEach(async (to) => {
   const a = getAuth()
-  const isPublic = to.name === 'login' || to.name === 'onboarding'
 
-  // Authenticated user visiting login/onboarding → dashboard.
-  if (isPublic && a?.token) {
-    return { name: 'dashboard' }
-  }
-
-  // Public route, no token: check onboarding state once.
-  if (!a?.token && !isPublic) {
-    if (!onboardingChecked) {
-      try {
-        const res = await fetch('/api/v1/auth/status')
-        const body = (await res.json()) as { onboarded?: boolean }
-        needsOnboarding = !body.onboarded
-      } catch {
-        needsOnboarding = false // API down — fall back to login
-      }
-      onboardingChecked = true
+  // Authenticated: login/onboarding pages make no sense → dashboard.
+  if (a?.token) {
+    if (to.name === 'login' || to.name === 'onboarding') {
+      return { name: 'dashboard' }
     }
-    return { name: needsOnboarding ? 'onboarding' : 'login' }
+    return true
   }
 
-  return true
+  // No token: check onboarding state.
+  let needsOnboarding = false
+  try {
+    const res = await fetch('/api/v1/auth/status')
+    const body = (await res.json()) as { onboarded?: boolean }
+    needsOnboarding = !body.onboarded
+  } catch {
+    needsOnboarding = false // API down — fall back to login
+  }
+
+  if (needsOnboarding) {
+    // Not onboarded yet: /login is NOT allowed — force onboarding.
+    if (to.name === 'onboarding') return true
+    return { name: 'onboarding' }
+  }
+
+  // Onboarded: /onboarding is NOT allowed — force login.
+  if (to.name === 'onboarding') return { name: 'login' }
+  if (to.name === 'login') return true
+  return { name: 'login' }
 })
 
 export default router
