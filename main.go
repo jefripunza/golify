@@ -127,7 +127,7 @@ func main() {
 		}
 	}()
 
-	// :3000 — dashboard only, plaintext
+	// :3000 — dashboard SPA + WebSocket (unified single port)
 	dashApp := rootSPA("dashboard")
 	bindFE := envOr("GOTIFY_FE", ":"+strconv.Itoa(portFE))
 	lnFE, err := net.Listen("tcp", bindFE)
@@ -135,20 +135,9 @@ func main() {
 		log.Fatalf("listen :%d: %v", portFE, err)
 	}
 	go func() {
-		log.Printf("Dashboard listening on %s (SPA)", bindFE)
-		if err := dashApp.Listener(lnFE); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("Dashboard listening on %s (SPA + WS)", bindFE)
+		if err := serveUnified(lnFE, dashApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("dashboard server: %v", err)
-		}
-	}()
-
-	// :20004 — WebSocket exec (xterm shells), default
-	wsCtx, wsCancel := context.WithCancel(context.Background())
-	defer wsCancel()
-	go func() {
-		bindWS := envOr("GOTIFY_WS", ":20004")
-		log.Printf("WS listening on %s (/ws/exec)", bindWS)
-		if err := startWSServer(wsCtx); err != nil {
-			log.Printf("ws server: %v", err)
 		}
 	}()
 

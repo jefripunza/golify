@@ -1,10 +1,9 @@
 package main
 
 import (
-	"context"
 	"io"
+	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -13,14 +12,14 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// WebSocket terminal exec — a separate native fasthttp server:
+// WebSocket terminal exec — served on the SAME port as the API/SPA (unified).
 //   1. authenticates via JWT in the `?token=` query string
 //   2. resolves the requested service to a podman container (or host shell)
 //   3. spawns `podman exec -it <ctr> /bin/sh` (fallback host /bin/sh) with
 //      stdin/stdout piped to the WS connection
 //
-// Runs on its own port (GOTIFY_WS env, default :20004) because Fiber v3 has
-// no first-class WebSocket support yet.
+// Fiber v3 has no first-class WebSocket support, so the unified fasthttp
+// server routes `/ws/*` to this handler and everything else to Fiber.
 
 func streamHandler(ctx *fasthttp.RequestCtx) {
 	tok := string(ctx.QueryArgs().Peek("token"))
@@ -91,6 +90,37 @@ func streamHandler(ctx *fasthttp.RequestCtx) {
 	})
 }
 
+// wsRequestHandler handles /ws/* paths on the unified port.
+// Returns true if the path was handled (WS or /ws/health), false otherwise.
+func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
+	path := string(ctx.Path())
+	if path == "/ws/health" {
+		ctx.SetStatusCode(200)
+		ctx.SetBodyString(`{"app":"golify-ws","status":"ok"}`)
+		return true
+	}
+	if strings.HasPrefix(path, "/ws/") {
+		streamHandler(ctx)
+		return true
+	}
+	return false
+}
+
+// serveUnified serves a fiber.App and the WebSocket handler on the SAME
+// listener/port: /ws/* goes to the WS handler, everything else goes to Fiber.
+func serveUnified(ln net.Listener, fiberHandler fasthttp.RequestHandler) error {
+	srv := &fasthttp.Server{
+		Handler: func(ctx *fasthttp.RequestCtx) {
+			if wsRequestHandler(ctx) {
+				return
+			}
+			fiberHandler(ctx)
+		},
+		Logger: discardLogger{},
+	}
+	return srv.Serve(ln)
+}
+
 func buildExecCmd(sid string) *exec.Cmd {
 	if sid == "host" {
 		return exec.Command("/bin/sh")
@@ -118,37 +148,8 @@ func (w *wsWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// startWSServer boots the WS listener. Blocks until ctx is cancelled.
-func startWSServer(ctx context.Context) error {
-	port := getenv("GOTIFY_WS", ":20004")
-	if !strings.HasPrefix(port, ":") && !strings.HasPrefix(port, "/") {
-		port = ":" + port
-	}
-	srv := &fasthttp.Server{
-		Handler: func(c *fasthttp.RequestCtx) {
-			path := string(c.Path())
-			if path == "/ws/health" {
-				c.SetStatusCode(200)
-				c.SetBodyString(`{"app":"golify-ws","status":"ok"}`)
-				return
-			}
-			streamHandler(c)
-		},
-		Logger: discardLogger{},
-	}
-	go func() {
-		<-ctx.Done()
-		srv.Shutdown()
-	}()
-	return srv.ListenAndServe(port)
-}
-
-func getenv(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return def
-}
+// startWSServer removed — WS is now served on the same unified port as the
+// API/SPA via wsRequestHandler + unifiedHandler in main.go.
 
 // discardLogger silences fasthttp access logs.
 type discardLogger struct{}

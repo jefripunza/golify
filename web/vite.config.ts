@@ -25,9 +25,9 @@ export default defineConfig({
     proxy: {
       // proxy /api to the Go backend in dev
       '/api': 'http://127.0.0.1:20001',
-      // proxy /ws (xterm WebSocket) to the Go WS server in dev
+      // proxy /ws (xterm WebSocket) to the Go dashboard server (same port as SPA)
       '/ws': {
-        target: 'http://127.0.0.1:20004',
+        target: 'http://127.0.0.1:20002',
         ws: true,
       },
     },
