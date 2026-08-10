@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Doughnut, Line } from 'vue-chartjs'
+import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
   Title,
   Tooltip,
   Legend,
-  ArcElement,
   LineElement,
   PointElement,
   CategoryScale,
   LinearScale,
   Filler,
 } from 'chart.js'
+import GaugeChart from '@/components/GaugeChart.vue'
 import {
   Card,
   CardContent,
@@ -29,7 +29,6 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  ArcElement,
   LineElement,
   PointElement,
   CategoryScale,
@@ -166,20 +165,9 @@ const netLabel = computed(() => {
   return `↓ ${fmt(rx)} · ↑ ${fmt(tx)}`
 })
 
-// ── Charts (Chart.js) ─────────────────────────────────────────────────────
-// maintainAspectRatio:true + aspectRatio:1 + parent aspect-square → the
-// doughnut fills a perfect square box (no more elliptical/tilted gauge).
-// animation:false → renders synchronously; RAF-based default animation
-// never fires in some embedded/headless contexts (blank canvas).
-const gaugeOptions = {
-  responsive: true,
-  maintainAspectRatio: true,
-  aspectRatio: 1,
-  animation: false,
-  cutout: '70%',
-  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-}
-
+// ── Charts ────────────────────────────────────────────────────────────────
+// Gauges: reusable GaugeChart.vue (Highcharts SVG speedometer).
+// Sparkline: Chart.js Line (kept — real-time CPU history).
 const sparkData = computed(() => ({
   labels: cpuHistory.value.map((_, i) => `${60 - i}s`),
   datasets: [
@@ -225,24 +213,6 @@ const gauges = computed(() => [
   { label: 'Disk', value: diskPercent.value, color: '#d29922' },
 ])
 
-// stable per-gauge chart data — computed, NOT a function call in the template.
-// vue-chartjs watches :data/:options props; a fresh object every render makes
-// it destroy+recreate the chart on every tick (2s WS) → empty canvas.
-const gaugeChartDatasets = computed(() =>
-  gauges.value.map((g) => ({
-    labels: ['used', 'free'],
-    datasets: [
-      {
-        data: [g.value, 100 - g.value],
-        backgroundColor: [g.color, '#21262d'],
-        borderWidth: 0,
-        circumference: 270,
-        rotation: -225,
-      },
-    ],
-  })),
-)
-
 const wsBadge = computed(() =>
   wsStatus.value === 'live'
     ? { text: 'Live', cls: 'bg-emerald-500/15 text-emerald-400' }
@@ -282,16 +252,24 @@ const wsBadge = computed(() =>
     </div>
 
     <div class="grid gap-4 md:grid-cols-3">
-      <Card v-for="(g, i) in gauges" :key="g.label">
+      <Card v-for="g in gauges" :key="g.label">
         <CardHeader class="pb-2">
           <CardDescription>{{ g.label }}</CardDescription>
           <CardTitle class="text-3xl">{{ g.value }}%</CardTitle>
         </CardHeader>
         <CardContent>
-          <!-- aspect-square keeps the doughnut a perfect circle -->
-          <div class="relative aspect-square w-full max-w-[200px] mx-auto">
-            <Doughnut :data="gaugeChartDatasets[i]" :options="gaugeOptions" />
-          </div>
+          <GaugeChart
+            :value="g.value"
+            :min="0"
+            :max="100"
+            unit="%"
+            :color="g.color"
+            :plot-bands="[
+              { from: 0, to: 70, color: '#3fb950' },
+              { from: 70, to: 90, color: '#d29922' },
+              { from: 90, to: 100, color: '#f85149' },
+            ]"
+          />
         </CardContent>
       </Card>
     </div>
