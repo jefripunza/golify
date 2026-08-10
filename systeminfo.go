@@ -27,6 +27,7 @@ import (
 // systemInfoPayload is the JSON frame sent to /ws/analytic clients.
 type systemInfoPayload struct {
 	CPU    float64    `json:"cpu"`
+	Cores  int        `json:"cores"` // total logical CPUs
 	Mem    systemMem  `json:"mem"`
 	Disk   systemDisk `json:"disk"`
 	Net    systemNet  `json:"net"`
@@ -82,9 +83,12 @@ func currentSystemInfo() systemInfoPayload {
 func collectSystemInfo() (*systemInfoPayload, error) {
 	p := &systemInfoPayload{}
 
-	// CPU — overall percent across all cores
+	// CPU — overall percent across all cores + logical core count
 	if percs, err := cpu.Percent(0, false); err == nil && len(percs) > 0 {
 		p.CPU = percs[0]
+	}
+	if n, err := cpu.Counts(true); err == nil {
+		p.Cores = n
 	}
 
 	// Memory

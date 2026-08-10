@@ -34,6 +34,7 @@ interface SysNet {
 }
 interface SystemInfo {
   cpu: number
+  cores: number
   mem: SysMem
   disk: SysDisk
   net: SysNet
@@ -203,11 +204,35 @@ const recent = ref([
   { id: 5, kind: 'backup', text: 'Backup uploaded to sawang-backups (1.4 GB)', time: '6h ago' },
 ])
 
+// ── Labels: actual values (not %) ─────────────────────────────────────────
+// CPU: total logical cores. Memory/Disk: free/total in GB (MB if < 1 GB).
+const fmtSize = (gb: number): string => {
+  if (gb >= 1) return `${gb.toFixed(1)} GB`
+  return `${Math.round(gb * 1024)} MB`
+}
+
+const cpuTotalLabel = computed(() => {
+  if (sys.value?.cores) return `${sys.value.cores} cores`
+  return '—'
+})
+
+const memFreeLabel = computed(() => {
+  if (!sys.value?.mem.total) return '—'
+  const free = sys.value.mem.total - sys.value.mem.used
+  return `${fmtSize(free)} / ${fmtSize(sys.value.mem.total)}`
+})
+
+const diskFreeLabel = computed(() => {
+  if (!sys.value?.disk.total) return '—'
+  const free = sys.value.disk.total - sys.value.disk.used
+  return `${fmtSize(free)} / ${fmtSize(sys.value.disk.total)}`
+})
+
 const stats = computed(() => [
   { label: 'Host', value: sys.value?.host ?? '…', icon: ServerIcon },
-  { label: 'CPU', value: `${cpuPercent.value}%`, icon: Cpu },
-  { label: 'Memory', value: `${memPercent.value}%`, icon: Activity },
-  { label: 'Disk', value: `${diskPercent.value}%`, icon: HardDrive },
+  { label: 'CPU', value: cpuTotalLabel.value, icon: Cpu },
+  { label: 'Memory', value: memFreeLabel.value, icon: Activity },
+  { label: 'Disk', value: diskFreeLabel.value, icon: HardDrive },
 ])
 
 const gauges = computed(() => [
@@ -258,9 +283,18 @@ const wsBadge = computed(() =>
       <Card v-for="g in gauges" :key="g.label">
         <CardHeader class="pb-2">
           <CardDescription>{{ g.label }}</CardDescription>
-          <CardTitle class="text-3xl">{{ g.value }}%</CardTitle>
+          <CardTitle class="text-2xl">
+            {{
+              g.label === 'CPU'
+                ? cpuTotalLabel
+                : g.label === 'Memory'
+                  ? memFreeLabel
+                  : diskFreeLabel
+            }}
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <!-- needle stays % — only the big number is actual value -->
           <GaugeChart
             :value="g.value"
             :min="0"
