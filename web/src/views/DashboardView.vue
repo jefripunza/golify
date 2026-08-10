@@ -1,17 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Line } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  Title,
-  Tooltip,
-  Legend,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-  Filler,
-} from 'chart.js'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Highcharts from 'highcharts/es-modules/masters/highcharts.src.js'
+import 'highcharts/es-modules/masters/highcharts-more.src.js'
 import GaugeChart from '@/components/GaugeChart.vue'
 import {
   Card,
@@ -24,17 +14,6 @@ import { Badge } from '@/components/ui/badge'
 import { Activity, Cpu, HardDrive, Server as ServerIcon, Wifi } from '@lucide/vue'
 import { useServersStore } from '@/stores'
 import { getAuth } from '@/lib/api'
-
-ChartJS.register(
-  Title,
-  Tooltip,
-  Legend,
-  LineElement,
-  PointElement,
-  CategoryScale,
-  LinearScale,
-  Filler,
-)
 
 const servers = useServersStore()
 
@@ -165,31 +144,55 @@ const netLabel = computed(() => {
   return `↓ ${fmt(rx)} · ↑ ${fmt(tx)}`
 })
 
-// ── Charts ────────────────────────────────────────────────────────────────
+// ── Charts (Highcharts only) ──────────────────────────────────────────────
 // Gauges: reusable GaugeChart.vue (Highcharts SVG speedometer).
-// Sparkline: Chart.js Line (kept — real-time CPU history).
-const sparkData = computed(() => ({
-  labels: cpuHistory.value.map((_, i) => `${60 - i}s`),
-  datasets: [
-    {
-      label: 'CPU',
-      data: cpuHistory.value,
-      borderColor: '#58a6ff',
-      backgroundColor: 'rgba(88, 166, 255, 0.15)',
-      fill: true,
-      tension: 0.4,
-      pointRadius: 0,
-      borderWidth: 2,
+// Sparkline: Highcharts area chart — updates via ref, no canvas.
+const sparklineRef = ref<HTMLDivElement | null>(null)
+let sparkChart: Highcharts.Chart | null = null
+
+const sparkOptions: Highcharts.Options = {
+  chart: { type: 'area', height: 140, backgroundColor: 'transparent', spacing: [4, 4, 4, 4] },
+  title: { text: undefined },
+  credits: { enabled: false },
+  legend: { enabled: false },
+  tooltip: { enabled: false },
+  xAxis: { visible: false },
+  yAxis: { visible: false, min: 0, max: 100 },
+  plotOptions: {
+    area: {
+      lineColor: '#58a6ff',
+      lineWidth: 2,
+      fillColor: {
+        linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+        stops: [
+          [0, 'rgba(88, 166, 255, 0.35)'],
+          [1, 'rgba(88, 166, 255, 0.02)'],
+        ],
+      },
+      marker: { enabled: false },
+      animation: false,
     },
-  ],
-}))
-const sparkOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  animation: false,
-  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-  scales: { x: { display: false }, y: { display: false } },
+  },
+  series: [{ type: 'area', name: 'CPU', data: [] }],
 }
+
+onMounted(() => {
+  if (sparklineRef.value) {
+    sparkChart = Highcharts.chart(sparklineRef.value, sparkOptions)
+  }
+})
+
+// push updates into the existing chart (redraw:true — otherwise the path
+// stays stale because we disabled chart-level animation)
+watch(
+  () => cpuHistory.value,
+  (hist) => {
+    if (sparkChart) {
+      sparkChart.series[0]?.setData(hist.slice(), true)
+    }
+  },
+  { deep: true },
+)
 
 // recent activity mock (kept from existing design)
 const recent = ref([
@@ -280,9 +283,7 @@ const wsBadge = computed(() =>
         <CardDescription>Real-time CPU %, updated every second over WebSocket.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div class="relative h-[160px]">
-          <Line :data="sparkData" :options="sparkOptions" />
-        </div>
+        <div ref="sparklineRef" class="w-full" />
       </CardContent>
     </Card>
 
