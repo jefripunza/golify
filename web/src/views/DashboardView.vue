@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import Highcharts from 'highcharts'
-import { Chart } from 'highcharts-vue'
 import {
   Card,
   CardContent,
@@ -31,54 +29,53 @@ const totalDisk = computed(() => {
   return Math.round(online.reduce((a, s) => a + s.disk, 0) / online.length)
 })
 
-// sparkline (mock timeseries)
+// sparkline (mock timeseries) — pure SVG, no chart lib
 const series = Array.from({ length: 24 }, (_, i) => Math.round(20 + Math.random() * 40))
-const cpuOptions = computed(() => ({
-  chart: { type: 'areaspline', height: 80, backgroundColor: 'transparent' },
-  title: { text: undefined },
-  xAxis: { visible: false },
-  yAxis: { visible: false },
-  legend: { enabled: false },
-  credits: { enabled: false },
-  plotOptions: { areaspline: { marker: { enabled: false } } },
-  series: [{ name: 'cpu', data: series, color: '#58a6ff', fillOpacity: 0.2 }],
-}))
-
-const gaugeOpts = (value: number, color: string) => ({
-  chart: { type: 'solidgauge', height: 140, backgroundColor: 'transparent' },
-  title: { text: undefined },
-  pane: {
-    center: ['50%', '85%'],
-    size: '140%',
-    startAngle: -90,
-    endAngle: 90,
-    background: [{ backgroundColor: '#21262d', innerRadius: '60%', outerRadius: '100%', shape: 'arc', borderWidth: 0 }],
-  },
-  tooltip: { enabled: false },
-  yAxis: {
-    min: 0,
-    max: 100,
-    lineWidth: 0,
-    tickWidth: 0,
-    minorTickInterval: null,
-    tickAmount: 0,
-    title: { text: undefined },
-    labels: { enabled: false },
-  },
-  credits: { enabled: false },
-  plotOptions: {
-    solidgauge: {
-      dataLabels: { enabled: false },
-      innerRadius: '60%',
-    },
-  },
-  series: [{
-    name: 'value',
-    data: [value],
-    dataLabels: { enabled: false },
-    color,
-  }],
+const sparkPoints = computed(() => {
+  const max = Math.max(...series)
+  const min = Math.min(...series)
+  const w = 280
+  const h = 64
+  const step = w / (series.length - 1)
+  return series
+    .map((v, i) => {
+      const x = i * step
+      const y = h - ((v - min) / (max - min || 1)) * (h - 8) - 4
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
 })
+const sparkArea = computed(() => `0,64 ${sparkPoints.value} 280,64`)
+
+// gauge — pure SVG arc, no chart lib
+const gaugePath = (value: number) => {
+  const r = 44
+  const cx = 60
+  const cy = 60
+  const start = Math.PI * 0.75 // 135deg (bottom-left)
+  const end = Math.PI * 0.25 // 45deg (bottom-right)
+  const total = end - start + Math.PI * 2
+  const frac = Math.min(1, Math.max(0, value / 100))
+  const a = start + total * frac
+  const large = a - start > Math.PI ? 1 : 0
+  const x = cx + r * Math.cos(a)
+  const y = cy + r * Math.sin(a)
+  const x0 = cx + r * Math.cos(start)
+  const y0 = cy + r * Math.sin(start)
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
+}
+const gaugeBg = () => {
+  const r = 44
+  const cx = 60
+  const cy = 60
+  const start = Math.PI * 0.75
+  const end = Math.PI * 0.25
+  const x0 = cx + r * Math.cos(start)
+  const y0 = cy + r * Math.sin(start)
+  const x1 = cx + r * Math.cos(end)
+  const y1 = cy + r * Math.sin(end)
+  return `M ${x0} ${y0} A ${r} ${r} 0 1 1 ${x1} ${y1}`
+}
 
 // recent activity mock
 const recent = ref([
@@ -94,6 +91,12 @@ const stats = computed(() => [
   { label: 'Avg CPU', value: `${totalCpu.value}%`, icon: Cpu },
   { label: 'Avg Memory', value: `${totalMem.value}%`, icon: Activity },
   { label: 'Avg Disk', value: `${totalDisk.value}%`, icon: HardDrive },
+])
+
+const gauges = computed(() => [
+  { label: 'CPU', value: totalCpu.value, color: '#58a6ff' },
+  { label: 'Memory', value: totalMem.value, color: '#3fb950' },
+  { label: 'Disk', value: totalDisk.value, color: '#d29922' },
 ])
 </script>
 
@@ -120,37 +123,22 @@ const stats = computed(() => [
     </div>
 
     <div class="grid gap-4 md:grid-cols-3">
-      <Card>
+      <Card v-for="g in gauges" :key="g.label">
         <CardHeader class="pb-2">
-          <CardDescription>CPU</CardDescription>
-          <CardTitle class="text-3xl">{{ totalCpu }}%</CardTitle>
+          <CardDescription>{{ g.label }}</CardDescription>
+          <CardTitle class="text-3xl">{{ g.value }}%</CardTitle>
         </CardHeader>
         <CardContent>
-          <ClientOnly>
-            <Chart :options="gaugeOpts(totalCpu, '#58a6ff')" />
-          </ClientOnly>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader class="pb-2">
-          <CardDescription>Memory</CardDescription>
-          <CardTitle class="text-3xl">{{ totalMem }}%</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ClientOnly>
-            <Chart :options="gaugeOpts(totalMem, '#3fb950')" />
-          </ClientOnly>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader class="pb-2">
-          <CardDescription>Disk</CardDescription>
-          <CardTitle class="text-3xl">{{ totalDisk }}%</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ClientOnly>
-            <Chart :options="gaugeOpts(totalDisk, '#d29922')" />
-          </ClientOnly>
+          <svg viewBox="0 0 120 70" class="w-full max-w-[200px]">
+            <path :d="gaugeBg()" fill="none" stroke="#21262d" stroke-width="10" stroke-linecap="round" />
+            <path
+              :d="gaugePath(g.value)"
+              fill="none"
+              :stroke="g.color"
+              stroke-width="10"
+              stroke-linecap="round"
+            />
+          </svg>
         </CardContent>
       </Card>
     </div>
@@ -161,9 +149,17 @@ const stats = computed(() => [
         <CardDescription>Sample timeseries, mocked.</CardDescription>
       </CardHeader>
       <CardContent>
-        <ClientOnly>
-          <Chart :options="cpuOptions" />
-        </ClientOnly>
+        <svg viewBox="0 0 280 64" class="w-full">
+          <polygon :points="sparkArea" fill="#58a6ff" fill-opacity="0.15" />
+          <polyline
+            :points="sparkPoints"
+            fill="none"
+            stroke="#58a6ff"
+            stroke-width="2"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+          />
+        </svg>
       </CardContent>
     </Card>
 
