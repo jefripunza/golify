@@ -9,6 +9,12 @@ import { Button } from '@/components/ui/button'
 const error = ref<Error | null>(null)
 const copied = ref(false)
 
+// Dedupe error reports: the same error (title + stack) must not be posted
+// more than once within the window — guards against ErrorBoundary being
+// mounted multiple times (layout + router re-mounts) sending duplicate hits.
+const reportedKeys = new Map<string, number>()
+const REPORT_DEDUPE_MS = 60_000
+
 onErrorCaptured((err, _instance, info) => {
   error.value = err instanceof Error ? err : new Error(String(err))
   error.value.message = `${error.value.message}\n\n[info] ${info}`
@@ -21,6 +27,12 @@ onErrorCaptured((err, _instance, info) => {
 function reportError(err: Error) {
   const title = err.name || 'Error'
   const stack = err.stack || err.message || ''
+  const key = `${title}\n${stack}`
+  const now = Date.now()
+  const last = reportedKeys.get(key)
+  if (last !== undefined && now - last < REPORT_DEDUPE_MS) return // already reported
+  reportedKeys.set(key, now)
+
   const appUrl = typeof window !== 'undefined' ? window.location.href : ''
   const payload = {
     app_name: 'Golify Dashboard',

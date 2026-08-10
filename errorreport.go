@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -15,6 +16,13 @@ import (
 // Telegram thread). Public on purpose: errors can happen before auth.
 
 const errorReportURL = "https://error.sawang.tech/api/report/error"
+
+// Dedupe: identical reports (same app+title+stack) are only forwarded once
+// per window. Guards against the FE boundary firing multiple times (layout
+// + router re-mounts) without spamming the error reporter.
+var reportMu sync.Mutex
+var recentReports = map[string]time.Time{}
+const reportDedupeWindow = 60 * time.Second
 
 type errorReport struct {
 	AppName string `json:"app_name"`
@@ -34,6 +42,16 @@ func reportErrorHandler(c fiber.Ctx) error {
 			"error": "app_name, app_url, title, stack are required",
 		})
 	}
+
+	// dedupe identical reports within the window
+	key := body.AppName + "\x00" + body.Title + "\x00" + body.Stack
+	reportMu.Lock()
+	if last, ok := recentReports[key]; ok && time.Since(last) < reportDedupeWindow {
+		reportMu.Unlock()
+		return c.JSON(fiber.Map{"ok": true, "delivered": true, "duplicate": true})
+	}
+	recentReports[key] = time.Now()
+	reportMu.Unlock()
 
 	payload, err := json.Marshal(body)
 	if err != nil {
