@@ -54,8 +54,26 @@ const (
 
 var (
 	db     *gorm.DB
-	jwtKey = mustRandomKey(32)
+	jwtKey = loadOrCreateJwtKey()
 )
+
+// jwtKeyFile persists the JWT signing key so tokens survive restarts.
+// Without this, every backend restart invalidates all sessions (random key)
+// → WebSocket auth 401 → dashboard shows Offline with empty metrics.
+const jwtKeyFile = "data/jwt.key"
+
+func loadOrCreateJwtKey() []byte {
+	if b, err := os.ReadFile(jwtKeyFile); err == nil && len(b) >= 32 {
+		return b
+	}
+	key := mustRandomKey(32)
+	if err := os.MkdirAll(filepath.Dir(jwtKeyFile), 0o755); err == nil {
+		if err := os.WriteFile(jwtKeyFile, key, 0o600); err != nil {
+			log.Printf("warn: cannot persist jwt key to %s: %v", jwtKeyFile, err)
+		}
+	}
+	return key
+}
 
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
