@@ -69,12 +69,15 @@ function buildOptions(): Highcharts.Options {
       type: 'gauge',
       height: '80%',
       backgroundColor: 'transparent',
+      // room for the top tick label (100) — otherwise it clips
+      marginTop: 30,
     },
     title: { text: undefined },
     pane: {
       startAngle: -90,
       endAngle: 90,
-      size: '100%',
+      // < 100% leaves space for the top label inside the plot area
+      size: '85%',
       background: [
         {
           outerRadius: '100%',
@@ -88,11 +91,13 @@ function buildOptions(): Highcharts.Options {
     yAxis: {
       min,
       max,
-      tickPixelInterval: 40,
+      // explicit interval (not tickPixelInterval) so EVERY tick 0..max shows
+      // (auto pixel-based ticks skip labels when arc spacing < interval)
+      tickInterval: Math.max(1, Math.round(max / 10)),
       tickColor: 'transparent',
       gridLineColor: 'transparent',
       labels: {
-        distance: 14,
+        distance: 18,
         style: { fontSize: '10px', color: '#8b949e' },
       },
       lineWidth: 0,
