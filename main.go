@@ -99,6 +99,10 @@ func main() {
 	seedIfEmpty(db)
 	log.Printf("sqlite ready at %s (GORM)", dbPath)
 
+	// system analytics worker — 1 Hz host metrics for /ws/analytic
+	startSystemWorker()
+	log.Println("system analytics worker started (1 Hz)")
+
 	// :80 — HTTP, ACME solver, API
 	httpApp := newHTTPApp()
 	bindHTTP := envOr("GOTIFY_HTTP", portHTTP)

@@ -99,11 +99,37 @@ func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 		ctx.SetBodyString(`{"app":"golify-ws","status":"ok"}`)
 		return true
 	}
+	if path == "/ws/analytic" {
+		analyticHandler(ctx)
+		return true
+	}
+	// /ws/terminal/server/:serverId — host terminal for a registered server
+	if serverID, ok := matchWSPath(path, "/ws/terminal/server/"); ok {
+		terminalHandler(ctx, "server", serverID)
+		return true
+	}
+	// /ws/terminal/container/:containerId — container terminal (podman exec)
+	if containerID, ok := matchWSPath(path, "/ws/terminal/container/"); ok {
+		terminalHandler(ctx, "container", containerID)
+		return true
+	}
 	if strings.HasPrefix(path, "/ws/") {
 		streamHandler(ctx)
 		return true
 	}
 	return false
+}
+
+// matchWSPath extracts the id segment after prefix, or ("", false).
+func matchWSPath(path, prefix string) (string, bool) {
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	id := strings.TrimPrefix(path, prefix)
+	if id == "" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
 }
 
 // serveUnified serves a fiber.App and the WebSocket handler on the SAME
@@ -142,6 +168,12 @@ type wsWriter struct {
 func (w *wsWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// WriteMessage panics if the conn is closed underneath us — catch it.
+	defer func() {
+		if r := recover(); r != nil {
+			// ignore: client disconnected
+		}
+	}()
 	if err := w.conn.WriteMessage(websocket.TextMessage, p); err != nil {
 		return 0, err
 	}
