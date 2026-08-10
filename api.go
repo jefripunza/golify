@@ -5,6 +5,9 @@ import (
 )
 
 func registerAPI(r fiber.Router) {
+	// client error reporting — public, forwards to error.sawang.tech
+	r.Post("/report/error", reportErrorHandler)
+
 	v1 := r.Group("/v1")
 
 	// public health

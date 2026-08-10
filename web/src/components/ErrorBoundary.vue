@@ -12,8 +12,30 @@ const copied = ref(false)
 onErrorCaptured((err, _instance, info) => {
   error.value = err instanceof Error ? err : new Error(String(err))
   error.value.message = `${error.value.message}\n\n[info] ${info}`
+  reportError(error.value)
   return false // stop propagation; we render our own fallback
 })
+
+// Send the error to the Go backend, which forwards it to error.sawang.tech.
+// Fire-and-forget: never block the fallback UI on the report.
+function reportError(err: Error) {
+  const title = err.name || 'Error'
+  const stack = err.stack || err.message || ''
+  const appUrl = typeof window !== 'undefined' ? window.location.href : ''
+  const payload = {
+    app_name: 'Golify Dashboard',
+    app_url: appUrl,
+    title,
+    stack,
+  }
+  fetch('/api/report/error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    /* report is best-effort — ignore network failures */
+  })
+}
 
 async function copyDetails() {
   if (!error.value) return
