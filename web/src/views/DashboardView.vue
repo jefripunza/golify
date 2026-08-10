@@ -86,14 +86,14 @@ function connectAnalyticWS() {
     wsStatus.value = 'down'
     // close code 4001 = auth rejected (backend sends this when token invalid)
     if (ev.code === 4001) {
-      redirectToLogin()
+      redirectToLogin('ws-4001')
       return
     }
     // if the socket died before ever opening, re-validate the session —
     // a dead token now bounces to /login instead of looping offline
     if (!wsOpened) {
       validateSession().then((ok) => {
-        if (!ok) redirectToLogin()
+        if (!ok) redirectToLogin('ws-never-opened')
         else scheduleReconnect()
       })
       return
@@ -119,15 +119,30 @@ const router = useRouter()
 
 // Token invalid (expired / backend restarted with fresh key) → clear session
 // and bounce to /login instead of showing a dead "Offline" dashboard.
-function redirectToLogin() {
+function redirectToLogin(reason = 'unknown') {
+  const hadToken = !!getAuth()
   setAuth(null)
+  // debug: report why we're bouncing (only when a token existed — otherwise
+  // this would fire on every anonymous /login visit)
+  if (hadToken) {
+    fetch('/api/report/error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_name: 'Golify Dashboard',
+        app_url: window.location.href,
+        title: `Bounce to login (${reason})`,
+        stack: new Error().stack || '',
+      }),
+    }).catch(() => {})
+  }
   router.replace('/login')
 }
 
 onMounted(async () => {
   // session check first — bounce early if token is dead
   if (!(await validateSession())) {
-    redirectToLogin()
+    redirectToLogin('mount-validate-failed')
     return
   }
   connectAnalyticWS()

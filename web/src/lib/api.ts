@@ -16,7 +16,14 @@ export interface AuthState {
   user: { id: number; username: string; email?: string; admin: boolean }
 }
 
+// In-memory auth cache. Safari iOS (private mode / ITP) can silently drop
+// localStorage writes — the guard would then see "no token" and bounce an
+// already-logged-in user straight back to /login. Keeping a module-level
+// mirror makes auth state survive even when localStorage is unavailable.
+let memoryAuth: AuthState | null = null
+
 export function getAuth(): AuthState | null {
+  if (memoryAuth) return memoryAuth
   try {
     const raw = localStorage.getItem(AUTH_KEY)
     return raw ? (JSON.parse(raw) as AuthState) : null
@@ -26,8 +33,21 @@ export function getAuth(): AuthState | null {
 }
 
 export function setAuth(auth: AuthState | null) {
-  if (auth) localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
-  else localStorage.removeItem(AUTH_KEY)
+  memoryAuth = auth
+  if (auth) {
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
+    } catch {
+      // localStorage unavailable (private mode / quota) — memory mirror keeps
+      // the session alive for this page load
+    }
+  } else {
+    try {
+      localStorage.removeItem(AUTH_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 // authed() returns a ky instance that attaches the Bearer token.
@@ -44,7 +64,7 @@ export function authed() {
               request.headers.set('Authorization', `Bearer ${auth.token}`)
             },
           ],
-        },
+        } as any,
       })
     : http
 }
