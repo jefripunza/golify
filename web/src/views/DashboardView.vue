@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import Highcharts from 'highcharts/es-modules/masters/highcharts.src.js'
 import 'highcharts/es-modules/masters/highcharts-more.src.js'
 import GaugeChart from '@/components/GaugeChart.vue'
@@ -11,9 +11,10 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Activity, Cpu, HardDrive, Server as ServerIcon, Wifi } from '@lucide/vue'
+import { Activity, Boxes, Cpu, Globe, HardDrive, Server as ServerIcon } from '@lucide/vue'
 import { useServersStore } from '@/stores'
-import { getAuth } from '@/lib/api'
+import { getAuth, setAuth, validateSession } from '@/lib/api'
+import { useRouter } from 'vue-router'
 
 const servers = useServersStore()
 
@@ -42,11 +43,14 @@ interface SystemInfo {
   load: [number, number, number]
   host: string
   os: string
+  ipLocal: string
+  ipPublic: string
 }
 
 const sys = ref<SystemInfo | null>(null)
 const wsStatus = ref<'connecting' | 'live' | 'down'>('connecting')
 let ws: WebSocket | null = null
+let wsOpened = false
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 
@@ -64,6 +68,7 @@ function connectAnalyticWS() {
 
   ws.onopen = () => {
     wsStatus.value = 'live'
+    wsOpened = true
     reconnectAttempts = 0
   }
 
@@ -77,8 +82,22 @@ function connectAnalyticWS() {
     }
   }
 
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
     wsStatus.value = 'down'
+    // close code 4001 = auth rejected (backend sends this when token invalid)
+    if (ev.code === 4001) {
+      redirectToLogin()
+      return
+    }
+    // if the socket died before ever opening, re-validate the session —
+    // a dead token now bounces to /login instead of looping offline
+    if (!wsOpened) {
+      validateSession().then((ok) => {
+        if (!ok) redirectToLogin()
+        else scheduleReconnect()
+      })
+      return
+    }
     scheduleReconnect()
   }
   ws.onerror = () => {
@@ -96,8 +115,23 @@ function scheduleReconnect() {
   }, delay)
 }
 
-onMounted(() => {
+const router = useRouter()
+
+// Token invalid (expired / backend restarted with fresh key) → clear session
+// and bounce to /login instead of showing a dead "Offline" dashboard.
+function redirectToLogin() {
+  setAuth(null)
+  router.replace('/login')
+}
+
+onMounted(async () => {
+  // session check first — bounce early if token is dead
+  if (!(await validateSession())) {
+    redirectToLogin()
+    return
+  }
   connectAnalyticWS()
+  fetchContainerCount()
 })
 
 onBeforeUnmount(() => {
@@ -216,23 +250,56 @@ const cpuTotalLabel = computed(() => {
   return '—'
 })
 
-const memFreeLabel = computed(() => {
-  if (!sys.value?.mem.total) return '—'
-  const free = sys.value.mem.total - sys.value.mem.used
-  return `${fmtSize(free)} / ${fmtSize(sys.value.mem.total)}`
+// Total container (podman/docker) — fetched from /api/v1/system/containers
+const containerCount = ref<number | null>(null)
+const containerRuntime = ref('')
+
+async function fetchContainerCount() {
+  try {
+    const auth = getAuth()
+    const res = await fetch('/api/v1/system/containers', {
+      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : {},
+    })
+    if (res.ok) {
+      const d = await res.json()
+      containerCount.value = d.count
+      containerRuntime.value = d.runtime
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+const containerLabel = computed(() => {
+  if (containerCount.value === null) return '…'
+  return `${containerCount.value}`
 })
 
-const diskFreeLabel = computed(() => {
-  if (!sys.value?.disk.total) return '—'
-  const free = sys.value.disk.total - sys.value.disk.used
-  return `${fmtSize(free)} / ${fmtSize(sys.value.disk.total)}`
+const hostLabel = computed(() => {
+  if (!sys.value?.host) return '…'
+  const ip = sys.value?.ipLocal
+  return ip ? `${sys.value.host} / ${ip}` : sys.value.host
 })
 
-const stats = computed(() => [
-  { label: 'Host', value: sys.value?.host ?? '…', icon: ServerIcon },
+const pubIpLabel = computed(() => sys.value?.ipPublic || '…')
+
+interface StatItem {
+  label: string
+  value: string
+  sub?: string
+  icon: Component
+}
+
+const stats = computed<StatItem[]>(() => [
+  {
+    label: 'Total Container',
+    value: containerLabel.value,
+    sub: containerRuntime.value,
+    icon: Boxes,
+  },
+  { label: 'Host', value: hostLabel.value, icon: ServerIcon },
   { label: 'CPU', value: cpuTotalLabel.value, icon: Cpu },
-  { label: 'Memory', value: memFreeLabel.value, icon: Activity },
-  { label: 'Disk', value: diskFreeLabel.value, icon: HardDrive },
+  { label: 'IP Public', value: pubIpLabel.value, icon: Globe },
 ])
 
 const gauges = computed(() => [
@@ -273,6 +340,7 @@ const wsBadge = computed(() =>
           <div>
             <p class="text-xs uppercase tracking-wider text-muted-foreground">{{ s.label }}</p>
             <p class="mt-1 text-2xl font-semibold">{{ s.value }}</p>
+            <p v-if="s.sub" class="text-xs text-muted-foreground">{{ s.sub }}</p>
           </div>
           <component :is="s.icon" class="size-5 text-muted-foreground" />
         </CardContent>
@@ -287,9 +355,7 @@ const wsBadge = computed(() =>
             {{
               g.label === 'CPU'
                 ? cpuTotalLabel
-                : g.label === 'Memory'
-                  ? memFreeLabel
-                  : diskFreeLabel
+                : `${g.value}%`
             }}
           </CardTitle>
         </CardHeader>

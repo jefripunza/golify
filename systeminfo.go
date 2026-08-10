@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,7 +15,7 @@ import (
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
+	gnet "github.com/shirou/gopsutil/v3/net"
 	"github.com/valyala/fasthttp"
 )
 
@@ -26,15 +29,17 @@ import (
 
 // systemInfoPayload is the JSON frame sent to /ws/analytic clients.
 type systemInfoPayload struct {
-	CPU    float64    `json:"cpu"`
-	Cores  int        `json:"cores"` // total logical CPUs
-	Mem    systemMem  `json:"mem"`
-	Disk   systemDisk `json:"disk"`
-	Net    systemNet  `json:"net"`
-	Uptime uint64     `json:"uptime"`
-	Load   [3]float64 `json:"load"`
-	Host   string     `json:"host"`
-	OS     string     `json:"os"`
+	CPU      float64    `json:"cpu"`
+	Cores    int        `json:"cores"` // total logical CPUs
+	Mem      systemMem  `json:"mem"`
+	Disk     systemDisk `json:"disk"`
+	Net      systemNet  `json:"net"`
+	Uptime   uint64     `json:"uptime"`
+	Load     [3]float64 `json:"load"`
+	Host     string     `json:"host"`
+	OS       string     `json:"os"`
+	IPLocal  string     `json:"ipLocal"`  // primary ethernet IPv4
+	IPPublic string     `json:"ipPublic"` // public IP (detected via api.ipify.org)
 }
 
 type systemMem struct {
@@ -62,8 +67,10 @@ var (
 func startSystemWorker() {
 	go func() {
 		for {
+			refreshPublicIP() // cached 60s; updates lastSysInfo.IPPublic
 			p, err := collectSystemInfo()
 			if err == nil {
+				publishPublicIP(p)
 				sysMu.Lock()
 				lastSysInfo = *p
 				sysMu.Unlock()
@@ -104,7 +111,7 @@ func collectSystemInfo() (*systemInfoPayload, error) {
 	}
 
 	// Network — cumulative counters (bytes since boot)
-	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
+	if counters, err := gnet.IOCounters(false); err == nil && len(counters) > 0 {
 		p.Net.RX = counters[0].BytesRecv
 		p.Net.TX = counters[0].BytesSent
 	}
@@ -116,12 +123,83 @@ func collectSystemInfo() (*systemInfoPayload, error) {
 		p.OS = hi.Platform + " " + hi.PlatformVersion
 	}
 
+	// Local IPv4 — primary ethernet (skip loopback/virtual bridges)
+	p.IPLocal = localIPv4()
+
 	// Load average
 	if la, err := load.Avg(); err == nil {
 		p.Load = [3]float64{la.Load1, la.Load5, la.Load15}
 	}
 
 	return p, nil
+}
+
+// localIPv4 returns the first non-loopback IPv4 (prefer physical ethernet).
+func localIPv4() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				return ip4.String()
+			}
+		}
+	}
+	return ""
+}
+
+// refreshPublicIP updates lastSysInfo.IPPublic (best-effort, cached 60s).
+// Fails silently — the dashboard just keeps the previous value.
+var (
+	pubIPMu     sync.Mutex
+	lastPubIP   string
+	lastPubIPAt time.Time
+)
+
+func refreshPublicIP() {
+	pubIPMu.Lock()
+	defer pubIPMu.Unlock()
+	if time.Since(lastPubIPAt) < 60*time.Second {
+		return // already fresh
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.ipify.org")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+	ip := strings.TrimSpace(string(b))
+	if net.ParseIP(ip) != nil {
+		lastPubIP = ip
+		lastPubIPAt = time.Now()
+	}
+}
+
+// publishPublicIP copies the cached public IP into the snapshot.
+func publishPublicIP(p *systemInfoPayload) {
+	pubIPMu.Lock()
+	p.IPPublic = lastPubIP
+	pubIPMu.Unlock()
 }
 
 // ---------------------------------------------------------------------------

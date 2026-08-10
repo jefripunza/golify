@@ -48,3 +48,18 @@ export function authed() {
       })
     : http
 }
+
+// validateSession() checks the stored token against /api/v1/auth/me.
+// Returns true if the session is still valid, false otherwise (and clears it).
+export async function validateSession(): Promise<boolean> {
+  const auth = getAuth()
+  if (!auth?.token) return false
+  try {
+    const res = await authed().get('api/v1/auth/me')
+    return res.status === 200
+  } catch {
+    // 401 → invalid/expired token; clear it
+    setAuth(null)
+    return false
+  }
+}
