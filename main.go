@@ -218,6 +218,11 @@ func newHTTPSApp() *fiber.App {
 
 func rootSPA(label string) *fiber.App {
 	app := newFiber(label)
+	// The unified dashboard port (GOTIFY_FE) serves the SPA + WS. The tunnel
+	// points golify.jefripunza.com at this port, so it must also serve the
+	// full /api surface (login POST, etc.) — otherwise login returns 404.
+	api := app.Group("/api")
+	registerAPI(api)
 	mountSPA(app, label)
 	return app
 }

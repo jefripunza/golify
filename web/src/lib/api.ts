@@ -18,35 +18,106 @@ export interface AuthState {
 
 // In-memory auth cache. Safari iOS (private mode / ITP) can silently drop
 // localStorage writes — the guard would then see "no token" and bounce an
-// already-logged-in user straight back to /login. Keeping a module-level
-// mirror makes auth state survive even when localStorage is unavailable.
-let memoryAuth: AuthState | null = null
+// already-logged-in user straight back to /login.
+//
+// Layered persistence (window → sessionStorage → localStorage):
+// - window: survives module HMR (Vite dev) and SPA navigation
+// - sessionStorage: survives full page reloads, works in Safari private mode
+//   (unlike localStorage, which Safari can silently drop or quota-throw)
+// - localStorage: best-effort cross-session persistence (regular browsing)
+//
+// IMPORTANT: the window mirror lives on `window`, NOT module scope. In Vite
+// dev, HMR can instantiate the same module twice (different import chains) —
+// a module-level `let memoryAuth` would give LoginView and the router guard
+// two DIFFERENT mirrors. A window global is shared by every module instance.
+declare global {
+  interface Window {
+    __golify_auth__?: AuthState | null
+    __golify_just_logged_in__?: boolean
+  }
+}
 
-export function getAuth(): AuthState | null {
-  if (memoryAuth) return memoryAuth
+function readMemoryAuth(): AuthState | null {
+  return window.__golify_auth__ ?? null
+}
+
+function tryParse(raw: string | null): AuthState | null {
+  if (!raw) return null
   try {
-    const raw = localStorage.getItem(AUTH_KEY)
-    return raw ? (JSON.parse(raw) as AuthState) : null
+    return JSON.parse(raw) as AuthState
   } catch {
     return null
   }
 }
 
+export function getAuth(): AuthState | null {
+  const mem = readMemoryAuth()
+  if (mem) return mem
+  // sessionStorage next — survives reload, works in Safari private mode
+  try {
+    const s = sessionStorage.getItem(AUTH_KEY)
+    if (s) return tryParse(s)
+  } catch {
+    /* ignore */
+  }
+  try {
+    const raw = localStorage.getItem(AUTH_KEY)
+    if (raw) return tryParse(raw)
+  } catch {
+    /* ignore */
+  }
+  // cookie last resort — survives reload even when storage APIs throw
+  return readCookie()
+}
+
 export function setAuth(auth: AuthState | null) {
-  memoryAuth = auth
+  window.__golify_auth__ = auth
   if (auth) {
+    const json = JSON.stringify(auth)
     try {
-      localStorage.setItem(AUTH_KEY, JSON.stringify(auth))
+      sessionStorage.setItem(AUTH_KEY, json)
     } catch {
-      // localStorage unavailable (private mode / quota) — memory mirror keeps
-      // the session alive for this page load
+      /* ignore */
+    }
+    try {
+      localStorage.setItem(AUTH_KEY, json)
+    } catch {
+      // localStorage unavailable (private mode / quota) — window + session
+      // mirrors keep the session alive
+    }
+    // cookie layer: survives full page reloads even when storage APIs are
+    // blocked (Safari private mode / ITP). Non-persistent (session cookie).
+    try {
+      document.cookie = `${AUTH_KEY}=${encodeURIComponent(json)}; path=/; SameSite=Lax`
+    } catch {
+      /* ignore */
     }
   } else {
+    try {
+      sessionStorage.removeItem(AUTH_KEY)
+    } catch {
+      /* ignore */
+    }
     try {
       localStorage.removeItem(AUTH_KEY)
     } catch {
       /* ignore */
     }
+    try {
+      document.cookie = `${AUTH_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function readCookie(): AuthState | null {
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)golify:auth=([^;]*)/)
+    if (!m) return null
+    return tryParse(decodeURIComponent(m[1]))
+  } catch {
+    return null
   }
 }
 
@@ -60,7 +131,7 @@ export function authed() {
         retry: { limit: 2, methods: ['get'] },
         hooks: {
           beforeRequest: [
-            (request) => {
+            (request: { headers: { set: (k: string, v: string) => void } }) => {
               request.headers.set('Authorization', `Bearer ${auth.token}`)
             },
           ],
@@ -73,7 +144,13 @@ export function authed() {
 // Returns true if the session is still valid, false otherwise (and clears it).
 export async function validateSession(): Promise<boolean> {
   const auth = getAuth()
-  if (!auth?.token) return false
+  if (!auth?.token) {
+    // window/sessionStorage mirror may hold it even if this module's
+    // getAuth() sees nothing (bundle split instances)
+    const win = (window as any).__golify_auth__
+    if (win?.token) return true // token present in mirror — trust it
+    return false
+  }
   try {
     const res = await authed().get('api/v1/auth/me')
     return res.status === 200

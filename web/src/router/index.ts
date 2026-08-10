@@ -66,11 +66,48 @@ const router = createRouter({
 function requireAuth() {
   return {
     beforeEnter: async () => {
-      const a = getAuth()
+      const a = readAuthAnywhere()
       if (!a?.token) return { name: 'login' }
       return true
     },
   }
+}
+
+// Read auth without relying on a single module instance. In some bundle
+// configurations (Vite code-splitting) the store's setAuth() and the guard's
+// getAuth() can end up in different module instances — a window-level read
+// is the one source of truth that is always shared.
+function readAuthAnywhere() {
+  const win = (window as any).__golify_auth__
+  if (win?.token) return win
+  try {
+    const ss = sessionStorage.getItem('golify:auth')
+    if (ss) {
+      const p = JSON.parse(ss)
+      if (p?.token) return p
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const ls = localStorage.getItem('golify:auth')
+    if (ls) {
+      const p = JSON.parse(ls)
+      if (p?.token) return p
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)golify:auth=([^;]*)/)
+    if (m) {
+      const p = JSON.parse(decodeURIComponent(m[1]))
+      if (p?.token) return p
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
 }
 
 // ── Global guard:
@@ -80,7 +117,22 @@ function requireAuth() {
 //      - not onboarded → /login and everything else redirect to /onboarding
 //      - onboarded → /onboarding redirects to /login; other routes → /login
 router.beforeEach(async (to) => {
-  const a = getAuth()
+  const a = readAuthAnywhere()
+
+  // Debug probe: whenever we bounce a user who just authenticated, report why
+  // (only on /login-targeted navigations from app routes to avoid noise).
+  if (!a?.token && to.name === 'login' && (window.__golify_auth__ || window.__golify_just_logged_in__)) {
+    fetch('/api/report/error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_name: 'Golify Dashboard',
+        app_url: window.location.href,
+        title: 'Guard bounce: session present but getAuth() null',
+        stack: `winAuth=${!!window.__golify_auth__} justLoggedIn=${!!window.__golify_just_logged_in__} ls=${!!localStorage.getItem('golify:auth')} ss=${!!sessionStorage.getItem('golify:auth')} nav=${to.fullPath}\n${new Error().stack || ''}`,
+      }),
+    }).catch(() => {})
+  }
 
   // Authenticated: login/onboarding pages make no sense → dashboard.
   if (a?.token) {

@@ -3,7 +3,7 @@
 
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { AUTH_KEY, setAuth, type AuthState } from '@/lib/api'
+import { getAuth, setAuth, type AuthState } from '@/lib/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const auth = ref<AuthState | null>(loadAuth())
@@ -25,11 +25,15 @@ export const useAuthStore = defineStore('auth', () => {
     const body = (await res.json()) as AuthState
     auth.value = body
     setAuth(body)
+    // mark that a fresh login just happened — the router guard uses this to
+    // report (not silently ignore) a bounce that follows an auth success
+    window.__golify_just_logged_in__ = true
   }
 
   function logout() {
     auth.value = null
     setAuth(null)
+    window.__golify_just_logged_in__ = false
   }
 
   return { auth, isAuthenticated, user, isAdmin, login, logout }
@@ -37,10 +41,5 @@ export const useAuthStore = defineStore('auth', () => {
 
 function loadAuth(): AuthState | null {
   if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(AUTH_KEY)
-    return raw ? (JSON.parse(raw) as AuthState) : null
-  } catch {
-    return null
-  }
+  return getAuth()
 }
