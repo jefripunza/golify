@@ -63,7 +63,7 @@ const container = ref<HTMLDivElement | null>(null)
 let chart: Highcharts.Chart | null = null
 
 function buildOptions(): Highcharts.Options {
-  const { min, max, unit, color, plotBands } = props
+  const { min, max, color, plotBands } = props
   return {
     chart: {
       type: 'gauge',
@@ -105,12 +105,7 @@ function buildOptions(): Highcharts.Options {
         type: 'gauge',
         name: props.title || 'value',
         data: [props.value],
-        dataLabels: {
-          borderWidth: 0,
-          format: `{y}${unit}`,
-          style: { fontSize: '18px', fontWeight: '600' },
-          color,
-        },
+        dataLabels: { enabled: false },
         dial: {
           radius: '90%',
           baseWidth: 4,
