@@ -1,5 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Doughnut, Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  LineElement,
+  PointElement,
+  CategoryScale,
+  LinearScale,
+  Filler,
+} from 'chart.js'
 import {
   Card,
   CardContent,
@@ -10,6 +23,18 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Activity, Cpu, HardDrive, Server as ServerIcon } from '@lucide/vue'
 import { useServersStore } from '@/stores'
+
+ChartJS.register(
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  LineElement,
+  PointElement,
+  CategoryScale,
+  LinearScale,
+  Filler,
+)
 
 const servers = useServersStore()
 
@@ -29,52 +54,48 @@ const totalDisk = computed(() => {
   return Math.round(online.reduce((a, s) => a + s.disk, 0) / online.length)
 })
 
-// sparkline (mock timeseries) — pure SVG, no chart lib
+// sparkline (mock timeseries) — Chart.js line chart
 const series = Array.from({ length: 24 }, (_, i) => Math.round(20 + Math.random() * 40))
-const sparkPoints = computed(() => {
-  const max = Math.max(...series)
-  const min = Math.min(...series)
-  const w = 280
-  const h = 64
-  const step = w / (series.length - 1)
-  return series
-    .map((v, i) => {
-      const x = i * step
-      const y = h - ((v - min) / (max - min || 1)) * (h - 8) - 4
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-})
-const sparkArea = computed(() => `0,64 ${sparkPoints.value} 280,64`)
-
-// gauge — pure SVG arc, no chart lib
-const gaugePath = (value: number) => {
-  const r = 44
-  const cx = 60
-  const cy = 60
-  const start = Math.PI * 0.75 // 135deg (bottom-left)
-  const end = Math.PI * 0.25 // 45deg (bottom-right)
-  const total = end - start + Math.PI * 2
-  const frac = Math.min(1, Math.max(0, value / 100))
-  const a = start + total * frac
-  const large = a - start > Math.PI ? 1 : 0
-  const x = cx + r * Math.cos(a)
-  const y = cy + r * Math.sin(a)
-  const x0 = cx + r * Math.cos(start)
-  const y0 = cy + r * Math.sin(start)
-  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
+const sparkData = computed(() => ({
+  labels: series.map((_, i) => `${i}h`),
+  datasets: [
+    {
+      label: 'CPU',
+      data: series,
+      borderColor: '#58a6ff',
+      backgroundColor: 'rgba(88, 166, 255, 0.15)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: 0,
+      borderWidth: 2,
+    },
+  ],
+}))
+const sparkOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  scales: { x: { display: false }, y: { display: false } },
 }
-const gaugeBg = () => {
-  const r = 44
-  const cx = 60
-  const cy = 60
-  const start = Math.PI * 0.75
-  const end = Math.PI * 0.25
-  const x0 = cx + r * Math.cos(start)
-  const y0 = cy + r * Math.sin(start)
-  const x1 = cx + r * Math.cos(end)
-  const y1 = cy + r * Math.sin(end)
-  return `M ${x0} ${y0} A ${r} ${r} 0 1 1 ${x1} ${y1}`
+
+// gauge — Chart.js doughnut (arc gauge)
+const gaugeChartData = (value: number, color: string) => ({
+  labels: ['used', 'free'],
+  datasets: [
+    {
+      data: [value, 100 - value],
+      backgroundColor: [color, '#21262d'],
+      borderWidth: 0,
+      circumference: 270,
+      rotation: -225,
+    },
+  ],
+})
+const gaugeOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '70%',
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
 }
 
 // recent activity mock
@@ -129,16 +150,9 @@ const gauges = computed(() => [
           <CardTitle class="text-3xl">{{ g.value }}%</CardTitle>
         </CardHeader>
         <CardContent>
-          <svg viewBox="0 0 120 70" class="w-full max-w-[200px]">
-            <path :d="gaugeBg()" fill="none" stroke="#21262d" stroke-width="10" stroke-linecap="round" />
-            <path
-              :d="gaugePath(g.value)"
-              fill="none"
-              :stroke="g.color"
-              stroke-width="10"
-              stroke-linecap="round"
-            />
-          </svg>
+          <div class="relative h-[140px]">
+            <Doughnut :data="gaugeChartData(g.value, g.color)" :options="gaugeOptions" />
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -149,17 +163,9 @@ const gauges = computed(() => [
         <CardDescription>Sample timeseries, mocked.</CardDescription>
       </CardHeader>
       <CardContent>
-        <svg viewBox="0 0 280 64" class="w-full">
-          <polygon :points="sparkArea" fill="#58a6ff" fill-opacity="0.15" />
-          <polyline
-            :points="sparkPoints"
-            fill="none"
-            stroke="#58a6ff"
-            stroke-width="2"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-          />
-        </svg>
+        <div class="relative h-[160px]">
+          <Line :data="sparkData" :options="sparkOptions" />
+        </div>
       </CardContent>
     </Card>
 
