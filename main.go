@@ -275,6 +275,14 @@ func spaFallback(dist fs.FS) fiber.Handler {
 		if _, err := fs.Stat(dist, rel); err == nil {
 			return c.Next()
 		}
+		// A missing file under /assets/ (or any .js/.css/.mjs) must 404, NOT
+		// fall back to index.html — otherwise the browser gets text/html for a
+		// script/stylesheet request and throws "not a valid JavaScript MIME
+		// type", breaking lazy-loaded chunks after a deploy (old index.html
+		// references chunks that no longer exist).
+		if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".map") || strings.HasSuffix(path, ".woff") || strings.HasSuffix(path, ".woff2") || strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".ico") || strings.HasSuffix(path, ".json") || strings.HasSuffix(path, ".webmanifest") {
+			return c.Status(404).SendString("not found")
+		}
 		b, err := fs.ReadFile(dist, "index.html")
 		if err != nil {
 			return c.Status(500).SendString("SPA index.html missing in embed")
