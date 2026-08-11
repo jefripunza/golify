@@ -149,6 +149,9 @@ export async function validateSession(): Promise<boolean> {
     // getAuth() sees nothing (bundle split instances)
     const win = (window as any).__golify_auth__
     if (win?.token) return true // token present in mirror — trust it
+    // A login just completed (store sets this flag right after setAuth) —
+    // never bounce in the middle of that flow; let the router guard decide.
+    if ((window as any).__golify_just_logged_in__) return true
     return false
   }
   try {

@@ -119,9 +119,17 @@ function readAuthAnywhere() {
 router.beforeEach(async (to) => {
   const a = readAuthAnywhere()
 
+  // If a login flow just completed but every storage layer looks empty, the
+  // state is mid-race (setAuth may not have finished). Never bounce a user
+  // who just authenticated — let the next navigation settle it.
+  const justLoggedIn = !!window.__golify_just_logged_in__
+  if (!a?.token && justLoggedIn && to.name !== 'login') {
+    return true
+  }
+
   // Debug probe: whenever we bounce a user who just authenticated, report why
   // (only on /login-targeted navigations from app routes to avoid noise).
-  if (!a?.token && to.name === 'login' && (window.__golify_auth__ || window.__golify_just_logged_in__)) {
+  if (!a?.token && to.name === 'login' && (window.__golify_auth__ || justLoggedIn)) {
     fetch('/api/report/error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -129,9 +137,12 @@ router.beforeEach(async (to) => {
         app_name: 'Golify Dashboard',
         app_url: window.location.href,
         title: 'Guard bounce: session present but getAuth() null',
-        stack: `winAuth=${!!window.__golify_auth__} justLoggedIn=${!!window.__golify_just_logged_in__} ls=${!!localStorage.getItem('golify:auth')} ss=${!!sessionStorage.getItem('golify:auth')} nav=${to.fullPath}\n${new Error().stack || ''}`,
+        stack: `winAuth=${!!window.__golify_auth__} justLoggedIn=${justLoggedIn} ls=${!!localStorage.getItem('golify:auth')} ss=${!!sessionStorage.getItem('golify:auth')} cookie=${!!document.cookie.match(/(?:^|;\s*)golify:auth=([^;]*)/)} nav=${to.fullPath}\n${new Error().stack || ''}`,
       }),
     }).catch(() => {})
+    // one report per login attempt is enough — reset the flag so we don't
+    // spam the error channel on every navigation
+    window.__golify_just_logged_in__ = false
   }
 
   // Authenticated: login/onboarding pages make no sense → dashboard.

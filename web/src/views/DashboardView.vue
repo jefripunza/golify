@@ -121,10 +121,16 @@ const router = useRouter()
 // and bounce to /login instead of showing a dead "Offline" dashboard.
 function redirectToLogin(reason = 'unknown') {
   const hadToken = !!getAuth()
-  setAuth(null)
+  const justLoggedIn = !!(window as any).__golify_just_logged_in__
+  // Never wipe a session that was JUST created (login flow in progress —
+  // races between WS close / guard / validate can fire before setAuth
+  // finishes). The router guard will handle the redirect correctly.
+  if (!justLoggedIn) {
+    setAuth(null)
+  }
   // debug: report why we're bouncing (only when a token existed — otherwise
   // this would fire on every anonymous /login visit)
-  if (hadToken) {
+  if (hadToken || justLoggedIn) {
     fetch('/api/report/error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

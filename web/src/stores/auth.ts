@@ -23,11 +23,11 @@ export const useAuthStore = defineStore('auth', () => {
       throw new Error(body.error ?? `login failed (${res.status})`)
     }
     const body = (await res.json()) as AuthState
+    // mark the login flow BEFORE persisting so racing guards/WS-close
+    // handlers never wipe a session that is being created right now
+    window.__golify_just_logged_in__ = true
     auth.value = body
     setAuth(body)
-    // mark that a fresh login just happened — the router guard uses this to
-    // report (not silently ignore) a bounce that follows an auth success
-    window.__golify_just_logged_in__ = true
   }
 
   function logout() {
