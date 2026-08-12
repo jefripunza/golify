@@ -314,6 +314,12 @@ func staticFromFS(fsys fs.FS) fiber.Handler {
 				c.Set(k, v)
 			}
 		}
+		// no-cache: assets are content-hashed (immutable per build), but the
+		// Cloudflare tunnel edge can otherwise serve a STALE copy of a chunk
+		// whose URL name collides across builds (Vite keeps the same hash when
+		// only an import specifier changes). Revalidating every request costs
+		// nothing here and eliminates stale-chunk mixing entirely.
+		c.Set(fiber.HeaderCacheControl, "no-cache")
 		c.Status(rec.status)
 		return c.Send(rec.body)
 	}

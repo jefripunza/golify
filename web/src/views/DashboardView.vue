@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Activity, Boxes, Cpu, Globe, HardDrive, Server as ServerIcon } from '@lucide/vue'
+import { Boxes, Globe, Monitor, Server as ServerIcon } from '@lucide/vue'
 import { useServersStore } from '@/stores'
 import { getAuth, setAuth, validateSession } from '@/lib/api'
 import { useRouter } from 'vue-router'
@@ -92,6 +92,12 @@ function connectAnalyticWS() {
     // if the socket died before ever opening, re-validate the session —
     // a dead token now bounces to /login instead of looping offline
     if (!wsOpened) {
+      // never bounce right after a fresh login — the WS handshake may have
+      // raced with setAuth (token not yet visible). Just reconnect.
+      if ((window as any).__golify_just_logged_in__) {
+        scheduleReconnect()
+        return
+      }
       validateSession().then((ok) => {
         if (!ok) redirectToLogin('ws-never-opened')
         else scheduleReconnect()
@@ -146,11 +152,10 @@ function redirectToLogin(reason = 'unknown') {
 }
 
 onMounted(async () => {
-  // session check first — bounce early if token is dead
-  if (!(await validateSession())) {
-    redirectToLogin('mount-validate-failed')
-    return
-  }
+  // The router guard already validated the session before this view mounts.
+  // No extra /auth/me check here — it has repeatedly raced with the login
+  // flow (setAuth finishing a tick later) and bounced fresh sessions.
+  // If the token is dead, the WS handshake gets 401 → ws-4001 → redirect.
   connectAnalyticWS()
   fetchContainerCount()
 })
@@ -318,8 +323,13 @@ const stats = computed<StatItem[]>(() => [
     sub: containerRuntime.value,
     icon: Boxes,
   },
+  {
+    label: 'OS',
+    value: sys.value?.os || '…',
+    sub: sys.value?.host ? undefined : 'Loading host info…',
+    icon: Monitor,
+  },
   { label: 'Host', value: hostLabel.value, icon: ServerIcon },
-  { label: 'CPU', value: cpuTotalLabel.value, icon: Cpu },
   { label: 'IP Public', value: pubIpLabel.value, icon: Globe },
 ])
 
@@ -343,9 +353,7 @@ const wsBadge = computed(() =>
     <header class="flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p class="text-sm text-muted-foreground">
-          {{ sys?.os ?? 'Loading host info…' }} · uptime {{ uptimeLabel }}
-        </p>
+        <p class="text-sm text-muted-foreground">uptime {{ uptimeLabel }}</p>
       </div>
       <div class="flex items-center gap-2">
         <Badge variant="secondary" class="font-mono text-xs">{{ netLabel }}</Badge>

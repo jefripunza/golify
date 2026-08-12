@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -42,6 +43,14 @@ func reportErrorHandler(c fiber.Ctx) error {
 			"error": "app_name, app_url, title, stack are required",
 		})
 	}
+
+	// debug: log every incoming report (title + first 200 chars of stack) so
+	// the backend journal is a source of truth for FE bounces
+	stackHead := body.Stack
+	if len(stackHead) > 200 {
+		stackHead = stackHead[:200]
+	}
+	log.Printf("[error-report] %s | %s | %s", body.AppName, body.Title, stackHead)
 
 	// dedupe identical reports within the window
 	key := body.AppName + "\x00" + body.Title + "\x00" + body.Stack
