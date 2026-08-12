@@ -103,8 +103,9 @@ onMounted(load)
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Domains</h1>
         <p class="text-sm text-muted-foreground">
-          Kelola daftar domain/subdomain. <code class="rounded bg-muted px-1.5 py-0.5">http://</code> /
+          Kelola daftar domain root. <code class="rounded bg-muted px-1.5 py-0.5">http://</code> /
           <code class="rounded bg-muted px-1.5 py-0.5">https://</code> otomatis dihilangkan saat disimpan.
+          Subdomain tidak diizinkan.
         </p>
       </div>
       <Badge variant="outline" class="font-mono">{{ items.length }} total</Badge>
@@ -115,7 +116,7 @@ onMounted(load)
         <CardTitle class="flex items-center gap-2 text-base">
           <Globe class="size-4 text-primary" /> Tambah Domain
         </CardTitle>
-        <CardDescription>Masukkan nama domain atau subdomain (contoh: example.com, sub.example.com).</CardDescription>
+        <CardDescription>Masukkan nama domain root (contoh: example.com). Subdomain (mis. sub.example.com) tidak diizinkan.</CardDescription>
       </CardHeader>
       <CardContent>
         <form class="flex flex-col gap-3 sm:flex-row sm:items-start" @submit.prevent="submit">
@@ -124,7 +125,7 @@ onMounted(load)
             <Input
               id="d"
               v-model="host"
-              placeholder="example.com atau https://sub.example.com"
+              placeholder="example.com"
               :disabled="saving"
               autocomplete="off"
               spellcheck="false"

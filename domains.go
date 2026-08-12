@@ -10,8 +10,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// domainRegex matches domain/subdomain labels: [a-z0-9-] separated by dots.
-var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+// domainRegex matches a ROOT domain only: exactly two labels (label.label).
+// Subdomains (3+ labels) are rejected — only root domains may be saved.
+var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // DomainEntry is a standalone domain/subdomain entry in the global Domains
 // list (sidebar menu "Domains"). Unlike Domain (which belongs to an

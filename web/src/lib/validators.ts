@@ -38,8 +38,9 @@ export type LoginValues = z.infer<typeof loginSchema>
 export type OnboardValues = z.infer<typeof onboardSchema>
 
 // ── Domain validation ─────────────────────────────────────────────────────
-// Accepts domain or subdomain. Auto-strips http:// / https:// scheme.
-// Rejects paths, ports, query strings, whitespace, and invalid characters.
+// Accepts ROOT DOMAIN ONLY (2 labels, e.g. "example.com"). Subdomains
+// (3+ labels, e.g. "sub.example.com") are REJECTED. Auto-strips
+// http:// / https:// scheme, paths, query strings.
 export const domainSchema = z
   .string()
   .trim()
@@ -54,10 +55,13 @@ export const domainSchema = z
     return d
   })
   .refine((d) => d.length > 0, { message: 'Domain wajib diisi' })
-  .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d), {
-    message: 'Format domain tidak valid (contoh: example.com atau sub.example.com)',
+  // exactly two labels: label.label (root domain, NO subdomain)
+  .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(d), {
+    message: 'Hanya domain root yang diizinkan (contoh: example.com). Subdomain tidak boleh.',
   })
-  .refine((d) => !d.includes('..'), { message: 'Format domain tidak valid' })
-  .refine((d) => !/^-|-$/.test(d.split('.')[0]), { message: 'Label domain tidak boleh diawali/diakhiri "-"' })
+  .refine((d) => {
+    const labels: string[] = d.split('.')
+    return labels.length === 2 && labels.every((l: string) => l && l[0] !== '-' && l[l.length - 1] !== '-')
+  }, { message: 'Label domain tidak boleh diawali/diakhiri "-"' })
 
 export type DomainValues = z.infer<typeof domainSchema>
