@@ -1,5 +1,6 @@
 // Zod validation schemas — shared by Login + Onboarding.
 import { z } from 'zod'
+import { DOMAIN_SUFFIXES } from './domainSuffixes'
 
 export const emailSchema = z
   .string()
@@ -38,9 +39,10 @@ export type LoginValues = z.infer<typeof loginSchema>
 export type OnboardValues = z.infer<typeof onboardSchema>
 
 // ── Domain validation ─────────────────────────────────────────────────────
-// Accepts ROOT DOMAIN ONLY (2 labels, e.g. "example.com"). Subdomains
-// (3+ labels, e.g. "sub.example.com") are REJECTED. Auto-strips
-// http:// / https:// scheme, paths, query strings.
+// Accepts ROOT DOMAIN (2 labels, e.g. "example.com") AND subdomains
+// (3+ labels, e.g. "sub.example.com"). Auto-strips http:// / https://
+// scheme, paths, query strings. Final suffix must be a real domain
+// suffix from the IANA/PSL-backed DOMAIN_SUFFIXES set.
 export const domainSchema = z
   .string()
   .trim()
@@ -55,13 +57,23 @@ export const domainSchema = z
     return d
   })
   .refine((d) => d.length > 0, { message: 'Domain is required' })
-  // exactly two labels: label.label (root domain, NO subdomain)
-  .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(d), {
-    message: 'Only root domains are allowed (e.g. example.com). Subdomains are not permitted.',
+  // one or more labels: label.label or sub.label.label
+  .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d), {
+    message: 'Invalid domain format (e.g. example.com or sub.example.com).',
   })
   .refine((d) => {
     const labels: string[] = d.split('.')
-    return labels.length === 2 && labels.every((l: string) => l && l[0] !== '-' && l[l.length - 1] !== '-')
+    return labels.every((l: string) => l && l[0] !== '-' && l[l.length - 1] !== '-')
   }, { message: 'Domain labels must not start/end with "-"' })
+  .refine((d) => {
+    // suffix must be a real TLD / public suffix (e.g. .com, .id, .co.id)
+    const labels: string[] = d.split('.')
+    for (let i = 1; i < labels.length; i++) {
+      const suffix = labels.slice(i).join('.')
+      if (DOMAIN_SUFFIXES.has(suffix)) return true
+    }
+    return false
+  }, { message: 'Invalid domain suffix (must end with a valid TLD like .com, .id, .online, .co.id)' })
 
 export type DomainValues = z.infer<typeof domainSchema>
+

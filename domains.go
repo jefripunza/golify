@@ -10,9 +10,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// domainRegex matches a ROOT domain only: exactly two labels (label.label).
-// Subdomains (3+ labels) are rejected — only root domains may be saved.
-var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+// domainRegex matches a hostname: one or more labels, dot-separated.
+// Root domains (example.com) and subdomains (sub.example.com) are both
+// allowed. Final suffix is validated against domainSuffixes separately.
+var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+
+// validDomainSuffix reports whether the final label(s) of host are a real
+// domain suffix (TLD or multi-label public suffix like co.id). At least one
+// label must precede the suffix.
+func validDomainSuffix(host string) bool {
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	// try the longest suffix first: full host minus first label, then
+	// progressively shorter. The suffix must exist in domainSuffixes.
+	for i := 1; i < len(labels); i++ {
+		suffix := strings.Join(labels[i:], ".")
+		if domainSuffixes[suffix] {
+			return true
+		}
+	}
+	return false
+}
 
 // DomainEntry is a standalone domain/subdomain entry in the global Domains
 // list (sidebar menu "Domains"). Unlike Domain (which belongs to an
@@ -52,6 +72,12 @@ func normalizeDomain(raw string) (string, error) {
 		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
 			return "", errors.New("invalid domain format (example: example.com or sub.example.com)")
 		}
+	}
+	// reject hostnames whose final suffix is not a real domain suffix
+	// (e.g. "example.example", "foo.badexample") — TLD/public suffix must
+	// exist in the IANA/PSL-backed domainSuffixes list.
+	if !validDomainSuffix(d) {
+		return "", errors.New("invalid domain suffix (must end with a valid TLD like .com, .id, .online, .co.id)")
 	}
 	return d, nil
 }
