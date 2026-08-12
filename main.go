@@ -49,10 +49,10 @@ import (
 var webDist embed.FS
 
 const (
-	portHTTP   = ":80"
-	portHTTPS  = ":443"
-	portFE     = 3000
-	portDual   = ":8080" // dual-mode (HTTP+HTTPS) — for Cloudflare tunnel single-rule
+	portHTTP   = ":20001" // proxy HTTP + ACME
+	portHTTPS  = ":20002" // proxy HTTPS
+	portFE     = 20003    // Dashboard + API + WS (unified single port)
+	portDual   = ":8080"  // dual-mode (HTTP+HTTPS) — for Cloudflare tunnel single-rule
 	dataDir    = "data"
 )
 

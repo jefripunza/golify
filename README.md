@@ -28,10 +28,10 @@ Initialized from official [`create-vue`](https://github.com/vuejs/create-vue) �
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 20002 | HTTP | Dashboard SPA + WebSocket (GOTIFY_FE) |
-| 20001 | HTTP | API + ACME http-01 solver (GOTIFY_HTTP) |
-| 20003 | HTTPS | SPA + API, TLS in-process (GOTIFY_HTTPS) |
-| 8080  | HTTP+HTTPS | Dual-mode listener for domain-gated proxy hosts — simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
+| 20001 | HTTP | Proxy HTTP + ACME solver (GOTIFY_HTTP) |
+| 20002 | HTTPS | Proxy HTTPS — SPA + API, TLS in-process (GOTIFY_HTTPS) |
+| 20003 | HTTP | Dashboard + API + WebSocket — unified single port, WS served directly by Go (GOTIFY_FE) |
+| 8080  | HTTP+HTTPS | Proxy all-in-one (single port) for Cloudflare tunnel — simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
 
 All overridable via `.env` (see `.env.example`) or env vars: `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`, `GOTIFY_DUAL`.
 
