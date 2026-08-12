@@ -30,6 +30,8 @@ func proxyDomainGate(c fiber.Ctx) error {
 		host = host[:i]
 	}
 	host = strings.TrimSuffix(host, ".")
+	// www.example.com ≡ example.com — normalize before lookup
+	host = strings.TrimPrefix(host, "www.")
 
 	if host == "" {
 		return plainNotice(c, "please setup your domain on system ...")

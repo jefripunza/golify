@@ -15,24 +15,24 @@ var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9](
 
 // validDomainSuffix reports whether the final label(s) of host are a real
 // domain suffix (TLD or multi-label public suffix like co.id). At least one
-// label must precede the suffix.
+// label must precede the suffix — a bare suffix (co.id, com) is NOT a valid
+// domain. Tries the longest suffix first (full host down to the TLD).
 func validDomainSuffix(host string) bool {
 	labels := strings.Split(host, ".")
 	if len(labels) < 2 {
 		return false
 	}
-	// try the longest suffix first: full host minus first label, then
-	// progressively shorter. The suffix must exist in domainSuffixes.
-	for i := 1; i < len(labels); i++ {
+	for i := 0; i < len(labels); i++ {
 		suffix := strings.Join(labels[i:], ".")
 		if domainSuffixes[suffix] {
-			return true
+			return i > 0 // at least one label before the suffix
 		}
 	}
 	return false
 }
 
-// normalizeDomain strips scheme/path/query and lowercases, returns bare host.
+// normalizeDomain strips scheme/path/query, lowercases, strips a leading
+// "www." label (www.example.com ≡ example.com), returns bare host.
 // Accepts "example.com", "sub.example.com", "http://x.com", "https://sub.x.com/".
 func normalizeDomain(raw string) (string, error) {
 	d := strings.TrimSpace(raw)
@@ -49,6 +49,9 @@ func normalizeDomain(raw string) (string, error) {
 	}
 	d = strings.TrimSuffix(d, ".")
 	d = strings.ToLower(d)
+	// www.example.com ≡ example.com — drop the www. label (but only the
+	// exact "www" label, not "wwws.example.com").
+	d = strings.TrimPrefix(d, "www.")
 	if d == "" {
 		return "", errors.New("domain required")
 	}

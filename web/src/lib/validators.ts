@@ -41,7 +41,8 @@ export type OnboardValues = z.infer<typeof onboardSchema>
 // ── Domain validation ─────────────────────────────────────────────────────
 // Accepts ROOT DOMAIN (2 labels, e.g. "example.com") AND subdomains
 // (3+ labels, e.g. "sub.example.com"). Auto-strips http:// / https://
-// scheme, paths, query strings. Final suffix must be a real domain
+// scheme, paths, query strings, and a leading "www." label
+// (www.example.com ≡ example.com). Final suffix must be a real domain
 // suffix from the IANA/PSL-backed DOMAIN_SUFFIXES set.
 export const domainSchema = z
   .string()
@@ -54,6 +55,8 @@ export const domainSchema = z
     // strip trailing path/query/fragment
     d = d.replace(/[/?#].*$/, '')
     d = d.replace(/\.+$/, '').toLowerCase()
+    // www.example.com ≡ example.com — drop the www. label
+    d = d.replace(/^www\./, '')
     return d
   })
   .refine((d) => d.length > 0, { message: 'Domain is required' })
@@ -67,10 +70,12 @@ export const domainSchema = z
   }, { message: 'Domain labels must not start/end with "-"' })
   .refine((d) => {
     // suffix must be a real TLD / public suffix (e.g. .com, .id, .co.id)
+    // AND at least one label must precede it — a bare suffix (co.id, com)
+    // is NOT a valid domain. Tries the longest suffix first.
     const labels: string[] = d.split('.')
-    for (let i = 1; i < labels.length; i++) {
+    for (let i = 0; i < labels.length; i++) {
       const suffix = labels.slice(i).join('.')
-      if (DOMAIN_SUFFIXES.has(suffix)) return true
+      if (DOMAIN_SUFFIXES.has(suffix)) return i > 0
     }
     return false
   }, { message: 'Invalid domain suffix (must end with a valid TLD like .com, .id, .online, .co.id)' })
