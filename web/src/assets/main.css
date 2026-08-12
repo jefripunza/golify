@@ -103,3 +103,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Highcharts tooltip must float above sibling cards and backdrops */
+.highcharts-tooltip,
+.highcharts-tooltip-container {
+  z-index: 9999 !important;
+  pointer-events: auto;
+}

@@ -233,6 +233,8 @@ const cpuChartOptions: Highcharts.Options = {
   tooltip: {
     shared: true,
     animation: false,
+    // keep the tooltip above sibling cards/backdrops
+    style: { zIndex: 9999 },
     // show every core value at this timestamp
     formatter() {
       const header = `<b>${this.points?.length ?? 0} cores</b><br/>`
