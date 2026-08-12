@@ -111,7 +111,7 @@ func createGeneric(ctx fiber.Ctx, out interface{}) error {
 }
 
 func getGeneric(ctx fiber.Ctx, model interface{}) error {
-	if err := db.First(model, ctx.Params("id")).Error; err != nil {
+	if err := db.First(model, "id = ?", ctx.Params("id")).Error; err != nil {
 		return ctx.Status(404).JSON(fiber.Map{"error": "not found"})
 	}
 	return ctx.JSON(model)
@@ -119,7 +119,7 @@ func getGeneric(ctx fiber.Ctx, model interface{}) error {
 
 func patchGeneric(ctx fiber.Ctx, model interface{}) error {
 	id := ctx.Params("id")
-	if err := db.First(model, id).Error; err != nil {
+	if err := db.First(model, "id = ?", id).Error; err != nil {
 		return ctx.Status(404).JSON(fiber.Map{"error": "not found"})
 	}
 	if err := ctx.Bind().JSON(model); err != nil {
@@ -131,8 +131,9 @@ func patchGeneric(ctx fiber.Ctx, model interface{}) error {
 	return ctx.JSON(model)
 }
 func deleteGeneric(ctx fiber.Ctx, model interface{}) error {
-	if err := db.Delete(model, ctx.Params("id")).Error; err != nil {
+	id := ctx.Params("id")
+	if err := db.Delete(model, "id = ?", id).Error; err != nil {
 		return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return ctx.JSON(fiber.Map{"deleted": ctx.Params("id")})
+	return ctx.JSON(fiber.Map{"deleted": id})
 }

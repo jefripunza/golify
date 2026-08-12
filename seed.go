@@ -130,7 +130,7 @@ func seedVariables(db *gorm.DB) {
 		{Key: "JWT_SIGN_KEY", Value: "<runtime-crypto-rand-32-byte>", IsSecret: true, Scope: "global"},
 		{Key: "DB_PATH", Value: "/app/data/golify.db", IsSecret: false, Scope: "global"},
 		{Key: "CLOUDFLARE_TUNNEL_ID", Value: "9c46bad2-7ed3-4d8e-bd44-...", IsSecret: true, Scope: "global"},
-		{Key: "POSTGRES_URL", Value: "postgres://localhost:5432/svc", IsSecret: true, Scope: "service", ScopeRef: 2},
+		{Key: "POSTGRES_URL", Value: "postgres://localhost:5432/svc", IsSecret: true, Scope: "service", ScopeRef: ""},
 	}
 	for i := range rows {
 		if err := db.Create(&rows[i]).Error; err != nil {

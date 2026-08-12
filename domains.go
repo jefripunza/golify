@@ -18,7 +18,7 @@ var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([
 // list (sidebar menu "Domains"). Unlike Domain (which belongs to an
 // Environment), these are free-standing records the user manages manually.
 type DomainEntry struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Host      string    `gorm:"size:255;not null;uniqueIndex" json:"host"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -95,10 +95,11 @@ func registerDomains(r fiber.Router) {
 
 	// delete
 	auth.Delete("/:id", func(c fiber.Ctx) error {
-		if err := db.Delete(&DomainEntry{}, c.Params("id")).Error; err != nil {
+		id := c.Params("id")
+		if err := db.Delete(&DomainEntry{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.JSON(fiber.Map{"deleted": c.Params("id")})
+		return c.JSON(fiber.Map{"deleted": id})
 	})
 
 	// duplicate check (used by FE before submit)

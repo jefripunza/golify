@@ -174,7 +174,7 @@ func registerUser(c fiber.Ctx) error {
 // changePassword lets the current user rotate their own password (bcrypt).
 func changePassword(c fiber.Ctx) error {
 	claims, ok := c.Locals("claims").(*Claims)
-	if !ok || claims == nil || claims.UserID == 0 {
+	if !ok || claims == nil || claims.UserID == "" {
 		return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
 	}
 	uid := claims.UserID
@@ -189,7 +189,7 @@ func changePassword(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "new password must be at least 8 characters"})
 	}
 	var u User
-	if err := db.First(&u, uid).Error; err != nil {
+	if err := db.First(&u, "id = ?", uid).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "user not found"})
 	}
 	if !checkPassword(u.Passhash, body.Old) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
-	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
@@ -55,10 +54,11 @@ func registerProjects(r fiber.Router) {
 	})
 
 	auth.Delete("/:id", func(c fiber.Ctx) error {
-		if err := db.Delete(&Project{}, c.Params("id")).Error; err != nil {
+		id := c.Params("id")
+		if err := db.Delete(&Project{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.JSON(fiber.Map{"deleted": c.Params("id")})
+		return c.JSON(fiber.Map{"deleted": id})
 	})
 
 	// ─── Environments within a project ─────────────────────────────────────
@@ -80,11 +80,11 @@ func registerProjects(r fiber.Router) {
 		if err := c.Bind().JSON(&body); err != nil || body.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
 		}
-		pid, err := strconv.Atoi(c.Params("projectId"))
-		if err != nil {
+		pid := c.Params("projectId")
+		if pid == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "bad project id"})
 		}
-		env := Environment{ProjectID: uint(pid), Name: body.Name, IsProduction: body.IsProduction}
+		env := Environment{ProjectID: pid, Name: body.Name, IsProduction: body.IsProduction}
 		for _, h := range body.Domains {
 			env.Domains = append(env.Domains, Domain{Host: h})
 		}
@@ -117,8 +117,8 @@ func registerProjects(r fiber.Router) {
 		if err := c.Bind().JSON(&body); err != nil || body.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
 		}
-		eid, err := strconv.Atoi(c.Params("envId"))
-		if err != nil {
+		eid := c.Params("envId")
+		if eid == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "bad env id"})
 		}
 		if body.Kind == "" {
@@ -128,7 +128,7 @@ func registerProjects(r fiber.Router) {
 			body.Status = "stopped"
 		}
 		s := Service{
-			EnvironmentID: uint(eid), Name: body.Name, Kind: body.Kind,
+			EnvironmentID: eid, Name: body.Name, Kind: body.Kind,
 			Image: body.Image, ComposePath: body.ComposePath, Status: body.Status,
 			CPU: body.CPU, Memory: body.Memory, Ports: body.Ports,
 		}
@@ -164,12 +164,12 @@ func registerProjects(r fiber.Router) {
 }
 
 func setServiceStatus(c fiber.Ctx, status string) error {
-	sid, err := strconv.Atoi(c.Params("serviceId"))
-	if err != nil {
+	sid := c.Params("serviceId")
+	if sid == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "bad service id"})
 	}
 	var s Service
-	if err := db.First(&s, sid).Error; err != nil {
+	if err := db.First(&s, "id = ?", sid).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "service not found"})
 	}
 	if s.Image == "" && s.ComposePath == "" {
@@ -179,7 +179,7 @@ func setServiceStatus(c fiber.Ctx, status string) error {
 	// Real container action via podman (or docker fallback). If the runtime
 	// isn't available on this host (e.g. CI), we gracefully fall back to a
 	// DB status flip so the UI still works.
-	ctrName := "golify-svc-" + fmt.Sprintf("%d", s.ID)
+	ctrName := "golify-svc-" + shortID(s.ID)
 	if err := containerAction(ctrName, status); err != nil {
 		// container may not exist → still flip status (dashboard semantics)
 		log.Printf("container action %s on %s failed (%v); flipping DB status only", status, ctrName, err)

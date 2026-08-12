@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -368,7 +370,7 @@ func buildTLSConfig() *tls.Config {
 // ----- JWT helpers ----------------------------------------------------------
 
 type Claims struct {
-	UserID   uint   `json:"uid"`
+	UserID   UUID   `json:"uid"`
 	Username string `json:"usr"`
 	Admin    bool   `json:"adm"`
 	jwt.RegisteredClaims
@@ -435,6 +437,25 @@ func randomToken(n int) string {
 		return ""
 	}
 	return hex.EncodeToString(b)
+}
+
+// newID returns a UUID v7 string (time-ordered primary key for all tables).
+func newID() UUID {
+	id, err := uuid.NewV7()
+	if err != nil {
+		// extremely unlikely — fall back to a random UUID
+		return uuid.NewString()
+	}
+	return id.String()
+}
+
+// shortID returns the first 8 chars of a UUID (safe, unique enough for
+// container names / human-readable references).
+func shortID(id UUID) string {
+	if len(id) >= 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // silence unused-import warnings if sql import drifts later

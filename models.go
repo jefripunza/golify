@@ -1,10 +1,46 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// UUID is a string primary key holding a UUID v7 (time-ordered).
+type UUID = string
+
+// BeforeCreate auto-fills a UUID v7 primary key when empty. Every model with
+// `ID UUID` benefits; callers never need to set IDs manually.
+func (m *Message) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
+func (m *Application) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Client) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
+func (m *User) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
+func (m *Project) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
+func (m *Environment) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Service) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
+func (m *Domain) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
+func (m *DomainEntry) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Server) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
+func (m *Source) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
+func (m *S3Storage) BeforeCreate(tx *gorm.DB) error          { return fillID(&m.ID) }
+func (m *SharedVariable) BeforeCreate(tx *gorm.DB) error     { return fillID(&m.ID) }
+func (m *Key) BeforeCreate(tx *gorm.DB) error                { return fillID(&m.ID) }
+func (m *ApiKey) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
+func (m *McpEndpoint) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Team) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
+func (m *TeamMember) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+
+// fillID assigns a UUID v7 when the pointer target is empty.
+func fillID(id *UUID) error {
+	if *id == "" {
+		*id = newID()
+	}
+	return nil
+}
 
 // Message represents a notification message stored in the golify database.
 type Message struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Title     string    `gorm:"size:255;not null;default:''" json:"title"`
 	Message   string    `gorm:"not null" json:"message"`
 	Priority  int       `gorm:"not null;default:0" json:"priority"`
@@ -13,7 +49,7 @@ type Message struct {
 
 // Application represents an application that can send messages via a token.
 type Application struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name      string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
 	Token     string    `gorm:"size:255;not null;uniqueIndex" json:"token"`
 	CreatedAt time.Time `json:"created_at"`
@@ -21,7 +57,7 @@ type Application struct {
 
 // Client represents a connected device/web client receiving messages.
 type Client struct {
-	ID        uint       `gorm:"primaryKey" json:"id"`
+	ID        UUID       `gorm:"primaryKey;size:36" json:"id"`
 	Name      string     `gorm:"size:255;not null" json:"name"`
 	Token     string     `gorm:"size:255;not null;uniqueIndex" json:"token"`
 	LastSeen  *time.Time `json:"last_seen"`
@@ -30,7 +66,7 @@ type Client struct {
 
 // User is a dashboard user (admin or read-only).
 type User struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Username  string    `gorm:"size:255;not null;uniqueIndex" json:"username"`
 	Email     string    `gorm:"size:255;not null;default:'';uniqueIndex" json:"email"`
 	Passhash  string    `gorm:"size:255;not null" json:"-"`
@@ -42,19 +78,19 @@ type User struct {
 
 // Project groups environments (e.g. a software project).
 type Project struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	Name        string         `gorm:"size:255;not null" json:"name"`
-	Description string         `gorm:"size:1024;default:''" json:"description"`
-	SourceID    string         `gorm:"size:255;default:''" json:"source_id"`
-	Envs        []Environment  `gorm:"constraint:OnDelete:CASCADE" json:"environments,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID          UUID          `gorm:"primaryKey;size:36" json:"id"`
+	Name        string        `gorm:"size:255;not null" json:"name"`
+	Description string        `gorm:"size:1024;default:''" json:"description"`
+	SourceID    string        `gorm:"size:255;default:''" json:"source_id"`
+	Envs        []Environment `gorm:"constraint:OnDelete:CASCADE" json:"environments,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 }
 
 // Environment groups services of a Project (production, staging, ...).
 type Environment struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	ProjectID    uint      `gorm:"not null;index" json:"project_id"`
+	ID           UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ProjectID    UUID      `gorm:"not null;index;size:36" json:"project_id"`
 	Name         string    `gorm:"size:255;not null" json:"name"`
 	IsProduction bool      `gorm:"not null;default:false" json:"is_production"`
 	Domains      []Domain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
@@ -65,24 +101,24 @@ type Environment struct {
 
 // Service is a container or compose app inside an Environment.
 type Service struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	EnvironmentID uint      `gorm:"not null;index" json:"environment_id"`
-	Name          string    `gorm:"size:255;not null" json:"name"`
-	Kind          string    `gorm:"size:32;not null;default:'container'" json:"kind"` // container | compose
-	Image         string    `gorm:"size:512;default:''" json:"image"`
-	ComposePath   string    `gorm:"size:512;default:''" json:"compose_path"`
-	Status        string    `gorm:"size:32;not null;default:'stopped'" json:"status"`
-	CPU           float64   `gorm:"default:0" json:"cpu"`
-	Memory        int64     `gorm:"default:0" json:"memory"` // MB
-	Ports         []string  `gorm:"serializer:json" json:"ports"`
+	ID            UUID     `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID UUID     `gorm:"not null;index;size:36" json:"environment_id"`
+	Name          string   `gorm:"size:255;not null" json:"name"`
+	Kind          string   `gorm:"size:32;not null;default:'container'" json:"kind"` // container | compose
+	Image         string   `gorm:"size:512;default:''" json:"image"`
+	ComposePath   string   `gorm:"size:512;default:''" json:"compose_path"`
+	Status        string   `gorm:"size:32;not null;default:'stopped'" json:"status"`
+	CPU           float64  `gorm:"default:0" json:"cpu"`
+	Memory        int64    `gorm:"default:0" json:"memory"` // MB
+	Ports         []string `gorm:"serializer:json" json:"ports"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Domain is one hostname attached to an Environment.
 type Domain struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	EnvironmentID uint      `gorm:"not null;index" json:"environment_id"`
+	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID UUID      `gorm:"not null;index;size:36" json:"environment_id"`
 	Host          string    `gorm:"size:255;not null" json:"host"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -91,7 +127,7 @@ type Domain struct {
 
 // Server is a deploy target registered in the dashboard.
 type Server struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
+	ID          UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name        string    `gorm:"size:255;not null" json:"name"`
 	Host        string    `gorm:"size:255;not null" json:"host"`
 	IP          string    `gorm:"size:64;default:''" json:"ip"`
@@ -103,14 +139,14 @@ type Server struct {
 	MemoryTotal int64     `gorm:"default:0" json:"memory_total"` // MB total
 	Disk        float64   `gorm:"default:0" json:"disk"`         // % used
 	Containers  int       `gorm:"default:0" json:"containers"`
-	KeyID       uint      `gorm:"default:0" json:"key_id"`
+	KeyID       UUID      `gorm:"default:'';size:36" json:"key_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Source is a VCS repo / git provider connection.
 type Source struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name      string    `gorm:"size:255;not null" json:"name"`
 	Provider  string    `gorm:"size:32;not null" json:"provider"`
 	URL       string    `gorm:"size:512;not null" json:"url"`
@@ -120,7 +156,7 @@ type Source struct {
 
 // S3Storage is an object-storage backup target.
 type S3Storage struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
+	ID          UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name        string    `gorm:"size:255;not null" json:"name"`
 	Endpoint    string    `gorm:"size:512;not null" json:"endpoint"`
 	Region      string    `gorm:"size:64;default:''" json:"region"`
@@ -132,18 +168,18 @@ type S3Storage struct {
 
 // SharedVariable is a global/project/env/service scoped key-value.
 type SharedVariable struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Key       string    `gorm:"size:255;not null" json:"key"`
 	Value     string    `gorm:"size:4096;default:''" json:"value"`
 	IsSecret  bool      `gorm:"not null;default:false" json:"is_secret"`
 	Scope     string    `gorm:"size:32;not null;default:'global'" json:"scope"`
-	ScopeRef  uint      `gorm:"default:0" json:"scope_ref"`
+	ScopeRef  UUID      `gorm:"default:'';size:36" json:"scope_ref"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Key is an SSH public key (private key never stored in DB).
 type Key struct {
-	ID          uint      `gorm:"primaryKey" json:"id"`
+	ID          UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name        string    `gorm:"size:255;not null" json:"name"`
 	PublicKey   string    `gorm:"size:4096;not null" json:"public_key"`
 	Fingerprint string    `gorm:"size:255;default:''" json:"fingerprint"`
@@ -152,7 +188,7 @@ type Key struct {
 
 // ApiKey is a token for CI / external automation.
 type ApiKey struct {
-	ID         uint       `gorm:"primaryKey" json:"id"`
+	ID         UUID       `gorm:"primaryKey;size:36" json:"id"`
 	Name       string     `gorm:"size:255;not null" json:"name"`
 	Prefix     string     `gorm:"size:64;not null" json:"prefix"`
 	Scopes     []string   `gorm:"serializer:json" json:"scopes"`
@@ -163,18 +199,18 @@ type ApiKey struct {
 
 // McpEndpoint is an MCP server registered in the dashboard.
 type McpEndpoint struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name      string    `gorm:"size:255;not null" json:"name"`
 	URL       string    `gorm:"size:512;not null" json:"url"`
 	Transport string    `gorm:"size:16;default:'http'" json:"transport"`
-	ApiKeyID  uint      `gorm:"default:0" json:"api_key_id"`
+	ApiKeyID  UUID      `gorm:"default:'';size:36" json:"api_key_id"`
 	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // Team + members (RBAC).
 type Team struct {
-	ID          uint         `gorm:"primaryKey" json:"id"`
+	ID          UUID         `gorm:"primaryKey;size:36" json:"id"`
 	Name        string       `gorm:"size:255;not null" json:"name"`
 	Description string       `gorm:"size:1024;default:''" json:"description"`
 	Permissions string       `gorm:"type:text;default:'{}'" json:"permissions"` // JSON map
@@ -183,8 +219,8 @@ type Team struct {
 }
 
 type TeamMember struct {
-	ID       uint      `gorm:"primaryKey" json:"id"`
-	TeamID   uint      `gorm:"not null;index" json:"team_id"`
+	ID       UUID      `gorm:"primaryKey;size:36" json:"id"`
+	TeamID   UUID      `gorm:"not null;index;size:36" json:"team_id"`
 	Email    string    `gorm:"size:255;not null" json:"email"`
 	Role     string    `gorm:"size:32;not null;default:'viewer'" json:"role"`
 	JoinedAt time.Time `json:"joined_at"`

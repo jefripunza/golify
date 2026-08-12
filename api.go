@@ -45,7 +45,7 @@ func registerAPI(r fiber.Router) {
 			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
 		}
 		var u User
-		if err := db.First(&u, claims.UserID).Error; err != nil {
+		if err := db.First(&u, "id = ?", claims.UserID).Error; err != nil {
 			return c.Status(401).JSON(fiber.Map{"error": "user not found"})
 		}
 		return c.JSON(fiber.Map{
@@ -94,7 +94,7 @@ func registerAPI(r fiber.Router) {
 	// delete one
 	auth.Delete("/message/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
-		if err := db.Delete(&Message{}, id).Error; err != nil {
+		if err := db.Delete(&Message{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": id})
