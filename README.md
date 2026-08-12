@@ -28,11 +28,26 @@ Initialized from official [`create-vue`](https://github.com/vuejs/create-vue) �
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 80   | HTTP     | API + ACME http-01 solver (no SPA fallback, so certbot challenges pass through) |
-| 443  | HTTPS    | SPA + API (TLS handled in-process via `GetCertificate` lookup) |
-| 3000 | HTTP     | Dashboard only (plaintext, for LAN access) |
+| 20002 | HTTP | Dashboard SPA + WebSocket (GOTIFY_FE) |
+| 20001 | HTTP | API + ACME http-01 solver (GOTIFY_HTTP) |
+| 20003 | HTTPS | SPA + API, TLS in-process (GOTIFY_HTTPS) |
+| 8080  | HTTP+HTTPS | Dual-mode listener for domain-gated proxy hosts — simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
 
-Override via env: `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`.
+All overridable via `.env` (see `.env.example`) or env vars: `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`, `GOTIFY_DUAL`.
+
+## Dev mode (hot reload)
+
+```bash
+./dev.sh          # backend (./run) + Vite dev server with HMR
+./dev.sh --fe     # frontend only (hot reload on :5173)
+./dev.sh --be     # backend only
+```
+
+- **Frontend** (`web/`): `npm run dev` → Vite on `:5173`, proxies `/api` → `GOTIFY_HTTP` and `/ws` → `GOTIFY_FE`. Edit any `.vue`/`.ts` → instant HMR, no reload needed.
+- **Backend** (Go): edits require a rebuild + restart (`go build -o run . && ./run`). Config via `.env` (godotenv) or env vars.
+- FE dev vars in `web/.env` (prefix `VITE_`): `VITE_DEV_PORT`, `VITE_DEV_PROXY_API`, `VITE_DEV_PROXY_WS` — see `web/.env.example`.
+- BE vars in `.env` — see `.env.example`.
+
 
 ## Build pipeline (single binary)
 

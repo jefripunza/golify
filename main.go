@@ -33,6 +33,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/joho/godotenv"
 	"github.com/gofiber/fiber/v3/middleware/etag"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -95,6 +96,14 @@ func mustRandomKey(n int) []byte {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	// Load .env (godotenv) BEFORE reading any env var — port/bind overrides
+	// live in .env (see .env.example). Real env vars take precedence.
+	if err := godotenv.Load(); err == nil {
+		log.Printf("env: loaded .env")
+	} else {
+		log.Printf("env: no .env found (%v) — using defaults", err)
+	}
 
 	// on-disk layout
 	if err := os.MkdirAll(filepath.Join(dataDir, "ssl", "letsencrypt"), 0o755); err != nil {
