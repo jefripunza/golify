@@ -265,14 +265,27 @@ const recent = ref([
 ])
 
 // ── Labels: actual values (not %) ─────────────────────────────────────────
-// CPU: total logical cores. Memory/Disk: free/total in GB (MB if < 1 GB).
+// CPU: total logical cores. Memory/Disk: free/total, auto MB/GB/TB.
 const fmtSize = (gb: number): string => {
+  if (gb >= 1000) return `${(gb / 1000).toFixed(2)} TB`
   if (gb >= 1) return `${gb.toFixed(1)} GB`
   return `${Math.round(gb * 1024)} MB`
 }
 
 const cpuTotalLabel = computed(() => {
   if (sys.value?.cores) return `${sys.value.cores} cores`
+  return '—'
+})
+
+const memFreeTotalLabel = computed(() => {
+  const m = sys.value?.mem
+  if (m?.total) return `${fmtSize(m.total - m.used)} / ${fmtSize(m.total)}`
+  return '—'
+})
+
+const diskFreeTotalLabel = computed(() => {
+  const d = sys.value?.disk
+  if (d?.total) return `${fmtSize(d.total - d.used)} / ${fmtSize(d.total)}`
   return '—'
 })
 
@@ -334,9 +347,9 @@ const stats = computed<StatItem[]>(() => [
 ])
 
 const gauges = computed(() => [
-  { label: 'CPU', value: cpuPercent.value, color: '#58a6ff' },
-  { label: 'Memory', value: memPercent.value, color: '#3fb950' },
-  { label: 'Disk', value: diskPercent.value, color: '#d29922' },
+  { label: 'CPU', value: cpuPercent.value, big: cpuTotalLabel.value, color: '#58a6ff' },
+  { label: 'Memory', value: memPercent.value, big: memFreeTotalLabel.value, color: '#3fb950' },
+  { label: 'Disk', value: diskPercent.value, big: diskFreeTotalLabel.value, color: '#d29922' },
 ])
 
 const wsBadge = computed(() =>
@@ -381,11 +394,7 @@ const wsBadge = computed(() =>
         <CardHeader class="pb-2">
           <CardDescription>{{ g.label }}</CardDescription>
           <CardTitle class="text-2xl">
-            {{
-              g.label === 'CPU'
-                ? cpuTotalLabel
-                : `${g.value}%`
-            }}
+            {{ g.big }}
           </CardTitle>
         </CardHeader>
         <CardContent>
