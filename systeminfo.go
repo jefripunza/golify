@@ -29,17 +29,18 @@ import (
 
 // systemInfoPayload is the JSON frame sent to /ws/analytic clients.
 type systemInfoPayload struct {
-	CPU      float64    `json:"cpu"`
-	Cores    int        `json:"cores"` // total logical CPUs
-	Mem      systemMem  `json:"mem"`
-	Disk     systemDisk `json:"disk"`
-	Net      systemNet  `json:"net"`
-	Uptime   uint64     `json:"uptime"`
-	Load     [3]float64 `json:"load"`
-	Host     string     `json:"host"`
-	OS       string     `json:"os"`
-	IPLocal  string     `json:"ipLocal"`  // primary ethernet IPv4
-	IPPublic string     `json:"ipPublic"` // public IP (detected via api.ipify.org)
+	CPU        float64    `json:"cpu"`
+	Cores      int        `json:"cores"` // total logical CPUs
+	CPUPerCore []float64  `json:"cpuPerCore"` // per-logical-core percent
+	Mem        systemMem  `json:"mem"`
+	Disk       systemDisk `json:"disk"`
+	Net        systemNet  `json:"net"`
+	Uptime     uint64     `json:"uptime"`
+	Load       [3]float64 `json:"load"`
+	Host       string     `json:"host"`
+	OS         string     `json:"os"`
+	IPLocal    string     `json:"ipLocal"`  // primary ethernet IPv4
+	IPPublic   string     `json:"ipPublic"` // public IP (detected via api.ipify.org)
 }
 
 type systemMem struct {
@@ -90,12 +91,16 @@ func currentSystemInfo() systemInfoPayload {
 func collectSystemInfo() (*systemInfoPayload, error) {
 	p := &systemInfoPayload{}
 
-	// CPU — overall percent across all cores + logical core count
+	// CPU — overall percent across all cores + logical core count + per-core
 	if percs, err := cpu.Percent(0, false); err == nil && len(percs) > 0 {
 		p.CPU = percs[0]
 	}
 	if n, err := cpu.Counts(true); err == nil {
 		p.Cores = n
+	}
+	// per-logical-core percentages (same tick as the aggregate)
+	if perCore, err := cpu.Percent(0, true); err == nil {
+		p.CPUPerCore = perCore
 	}
 
 	// Memory

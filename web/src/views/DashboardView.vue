@@ -36,6 +36,7 @@ interface SysNet {
 interface SystemInfo {
   cpu: number
   cores: number
+  cpuPerCore: number[]
   mem: SysMem
   disk: SysDisk
   net: SysNet
@@ -53,9 +54,6 @@ let ws: WebSocket | null = null
 let wsOpened = false
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
-
-const cpuHistory = ref<number[]>(Array.from({ length: 60 }, () => 0))
-const MAX_POINTS = 60
 
 function connectAnalyticWS() {
   const auth = getAuth()
@@ -76,7 +74,9 @@ function connectAnalyticWS() {
     try {
       const data = JSON.parse(ev.data) as SystemInfo
       sys.value = data
-      cpuHistory.value = [...cpuHistory.value.slice(1), data.cpu]
+      // per-core snapshot (fallback: single aggregate value)
+      const cores = data.cpuPerCore?.length ? data.cpuPerCore : [data.cpu]
+      cpuHistory.value = [...cpuHistory.value.slice(1), cores]
     } catch {
       /* ignore malformed frame */
     }
@@ -207,50 +207,86 @@ const netLabel = computed(() => {
 
 // ── Charts (Highcharts only) ──────────────────────────────────────────────
 // Gauges: reusable GaugeChart.vue (Highcharts SVG speedometer).
-// Sparkline: Highcharts area chart — updates via ref, no canvas.
-const sparklineRef = ref<HTMLDivElement | null>(null)
-let sparkChart: Highcharts.Chart | null = null
+// CPU line chart: one line per logical core, live 1 Hz, no animation,
+// tooltip shows every core value at the hovered point in time.
+const cpuChartRef = ref<HTMLDivElement | null>(null)
+let cpuChart: Highcharts.Chart | null = null
 
-const sparkOptions: Highcharts.Options = {
-  chart: { type: 'area', height: 140, backgroundColor: 'transparent', spacing: [4, 4, 4, 4] },
+// rolling per-core history: cpuHistory[i] = array of per-core percents at tick i
+const cpuHistory = ref<number[][]>(Array.from({ length: 60 }, () => []))
+const MAX_POINTS = 60
+
+// per-core palette (up to 24 cores), cycling hues
+const CORE_COLORS = [
+  '#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff', '#39c5cf',
+  '#ff7b72', '#a5d6ff', '#7ee787', '#e3b341', '#ffa198', '#d2a8ff',
+  '#76e3ea', '#ff9bce', '#b1f4cf', '#f0b429', '#f0883e', '#8b949e',
+]
+
+const cpuChartOptions: Highcharts.Options = {
+  chart: { type: 'line', height: 200, backgroundColor: 'transparent', animation: false },
   title: { text: undefined },
   credits: { enabled: false },
-  legend: { enabled: false },
-  tooltip: { enabled: false },
-  xAxis: { visible: false },
-  yAxis: { visible: false, min: 0, max: 100 },
-  plotOptions: {
-    area: {
-      lineColor: '#58a6ff',
-      lineWidth: 2,
-      fillColor: {
-        linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
-        stops: [
-          [0, 'rgba(88, 166, 255, 0.35)'],
-          [1, 'rgba(88, 166, 255, 0.02)'],
-        ],
-      },
-      marker: { enabled: false },
-      animation: false,
+  legend: { enabled: true, layout: 'horizontal', align: 'center', verticalAlign: 'bottom', itemStyle: { color: '#8b949e', fontSize: '10px' } },
+  xAxis: { visible: false, min: 0, max: MAX_POINTS - 1 },
+  yAxis: { visible: true, min: 0, max: 100, gridLineColor: 'rgba(139,148,158,0.15)', title: { text: undefined }, labels: { format: '{value}%', style: { color: '#8b949e' } } },
+  tooltip: {
+    shared: true,
+    animation: false,
+    // show every core value at this timestamp
+    formatter() {
+      const header = `<b>${this.points?.length ?? 0} cores</b><br/>`
+      const rows = (this.points ?? [])
+        .map((p) => `<span style="color:${p.color}">●</span> ${p.series.name}: <b>${Number(p.y ?? 0).toFixed(1)}%</b>`)
+        .join('<br/>')
+      return header + rows
     },
   },
-  series: [{ type: 'area', name: 'CPU', data: [] }],
+  plotOptions: {
+    line: {
+      lineWidth: 1.2,
+      marker: { enabled: false },
+      animation: false,
+      states: { hover: { lineWidth: 2 } },
+    },
+  },
+  series: [],
 }
 
 onMounted(() => {
-  if (sparklineRef.value) {
-    sparkChart = Highcharts.chart(sparklineRef.value, sparkOptions)
+  if (cpuChartRef.value) {
+    cpuChart = Highcharts.chart(cpuChartRef.value, cpuChartOptions)
   }
 })
 
-// push updates into the existing chart (redraw:true — otherwise the path
-// stays stale because we disabled chart-level animation)
+// push per-core snapshot into every series (redraw:false → no flicker)
 watch(
   () => cpuHistory.value,
   (hist) => {
-    if (sparkChart) {
-      sparkChart.series[0]?.setData(hist.slice(), true)
+    if (!cpuChart) return
+    const nCores = hist[hist.length - 1]?.length ?? 0
+    // (re)create series if core count changed
+    if (cpuChart.series.length !== nCores) {
+      while (cpuChart.series.length) cpuChart.series[0].remove(false)
+      for (let i = 0; i < nCores; i++) {
+        cpuChart.addSeries(
+          {
+            type: 'line',
+            name: `Core ${i + 1}`,
+            color: CORE_COLORS[i % CORE_COLORS.length],
+            data: [],
+          },
+          false,
+        )
+      }
     }
+    // shift per-series data by 1 tick (drop oldest point)
+    for (let i = 0; i < nCores; i++) {
+      const series = cpuChart.series[i]
+      const newData = hist.map((tick) => tick[i] ?? 0)
+      if (series) series.setData(newData, false)
+    }
+    cpuChart.redraw(false)
   },
   { deep: true },
 )
@@ -389,6 +425,16 @@ const wsBadge = computed(() =>
       </Card>
     </div>
 
+    <Card>
+      <CardHeader>
+        <CardTitle>CPU activity (live)</CardTitle>
+        <CardDescription>Per-core CPU %, updated every second over WebSocket. Hover to see all cores at that instant.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div ref="cpuChartRef" class="w-full" />
+      </CardContent>
+    </Card>
+
     <div class="grid gap-4 md:grid-cols-3">
       <Card v-for="g in gauges" :key="g.label">
         <CardHeader class="pb-2">
@@ -414,16 +460,6 @@ const wsBadge = computed(() =>
         </CardContent>
       </Card>
     </div>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>CPU activity (live)</CardTitle>
-        <CardDescription>Real-time CPU %, updated every second over WebSocket.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div ref="sparklineRef" class="w-full" />
-      </CardContent>
-    </Card>
 
     <Card>
       <CardHeader>
