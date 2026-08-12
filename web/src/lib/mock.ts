@@ -2,7 +2,6 @@ import type {
   ApiKey,
   Environment,
   Key,
-  MCPEndpoint,
   Project,
   S3Storage,
   Server,
@@ -254,7 +253,7 @@ export const mockKeys: Key[] = [
   },
 ]
 
-// ─── API Keys & MCP ────────────────────────────────────────────────────────
+// ─── API Keys ───────────────────────────────────────────────────────────────
 
 export const mockApiKeys: ApiKey[] = [
   {
@@ -277,27 +276,6 @@ export const mockApiKeys: ApiKey[] = [
   },
 ]
 
-export const mockMCP: MCPEndpoint[] = [
-  {
-    id: 'mcp_main',
-    name: 'main-mcp',
-    url: 'http://localhost:3000/mcp',
-    transport: 'http',
-    apiKeyId: 'ak_main',
-    enabled: true,
-    createdAt: now(),
-  },
-  {
-    id: 'mcp_agent',
-    name: 'agent-mcp',
-    url: 'http://localhost:3001/mcp',
-    transport: 'sse',
-    apiKeyId: 'ak_main',
-    enabled: false,
-    createdAt: now(),
-  },
-]
-
 // ─── Teams ─────────────────────────────────────────────────────────────────
 
 export const mockTeams: Team[] = [
@@ -317,7 +295,7 @@ export const mockTeams: Team[] = [
       s3: '*',
       variables: '*',
       keys: 'read',
-      'api-mcp': '*',
+      'api-keys': '*',
       teams: '*',
     },
     createdAt: now(),
@@ -334,7 +312,7 @@ export const mockTeams: Team[] = [
       s3: 'read',
       variables: 'read',
       keys: 'read',
-      'api-mcp': 'read',
+      'api-keys': 'read',
       teams: 'read',
     },
     createdAt: now(),

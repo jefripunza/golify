@@ -11,22 +11,17 @@ type UUID = string
 
 // BeforeCreate auto-fills a UUID v7 primary key when empty. Every model with
 // `ID UUID` benefits; callers never need to set IDs manually.
-func (m *Message) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
-func (m *Application) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
-func (m *Client) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
 func (m *User) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
 func (m *Project) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
 func (m *Environment) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *Service) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
 func (m *Domain) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *DomainEntry) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *Server) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
 func (m *Source) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
 func (m *S3Storage) BeforeCreate(tx *gorm.DB) error          { return fillID(&m.ID) }
 func (m *SharedVariable) BeforeCreate(tx *gorm.DB) error     { return fillID(&m.ID) }
 func (m *Key) BeforeCreate(tx *gorm.DB) error                { return fillID(&m.ID) }
 func (m *ApiKey) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *McpEndpoint) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *Team) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
 func (m *TeamMember) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 
@@ -36,32 +31,6 @@ func fillID(id *UUID) error {
 		*id = newID()
 	}
 	return nil
-}
-
-// Message represents a notification message stored in the golify database.
-type Message struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	Title     string    `gorm:"size:255;not null;default:''" json:"title"`
-	Message   string    `gorm:"not null" json:"message"`
-	Priority  int       `gorm:"not null;default:0" json:"priority"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Application represents an application that can send messages via a token.
-type Application struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	Name      string    `gorm:"size:255;not null;uniqueIndex" json:"name"`
-	Token     string    `gorm:"size:255;not null;uniqueIndex" json:"token"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// Client represents a connected device/web client receiving messages.
-type Client struct {
-	ID        UUID       `gorm:"primaryKey;size:36" json:"id"`
-	Name      string     `gorm:"size:255;not null" json:"name"`
-	Token     string     `gorm:"size:255;not null;uniqueIndex" json:"token"`
-	LastSeen  *time.Time `json:"last_seen"`
-	CreatedAt time.Time  `json:"created_at"`
 }
 
 // User is a dashboard user (admin or read-only).
@@ -115,11 +84,15 @@ type Service struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// Domain is one hostname attached to an Environment.
+// Domain is a hostname attached to an Environment. It is also the single
+// place where domains are registered (menu "Domains") — the standalone
+// domain_entries table was removed. A domain may be registered without an
+// environment (environment_id empty) and later linked to one; the proxy
+// gate only serves the SPA when the environment has a service.
 type Domain struct {
 	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
-	EnvironmentID UUID      `gorm:"not null;index;size:36" json:"environment_id"`
-	Host          string    `gorm:"size:255;not null" json:"host"`
+	EnvironmentID UUID      `gorm:"default:'';index;size:36" json:"environment_id"`
+	Host          string    `gorm:"size:255;not null;uniqueIndex" json:"host"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -195,17 +168,6 @@ type ApiKey struct {
 	LastUsedAt *time.Time `json:"last_used_at"`
 	ExpiresAt  *time.Time `json:"expires_at"`
 	CreatedAt  time.Time  `json:"created_at"`
-}
-
-// McpEndpoint is an MCP server registered in the dashboard.
-type McpEndpoint struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	Name      string    `gorm:"size:255;not null" json:"name"`
-	URL       string    `gorm:"size:512;not null" json:"url"`
-	Transport string    `gorm:"size:16;default:'http'" json:"transport"`
-	ApiKeyID  UUID      `gorm:"default:'';size:36" json:"api_key_id"`
-	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // Team + members (RBAC).

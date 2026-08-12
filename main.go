@@ -15,7 +15,6 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"embed"
-	"encoding/hex"
 	"errors"
 	"io/fs"
 	"log"
@@ -115,7 +114,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("gorm open: %v", err)
 	}
-	if err := db.AutoMigrate(&Message{}, &Application{}, &Client{}, &User{}, &Project{}, &Environment{}, &Service{}, &Domain{}, &DomainEntry{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &McpEndpoint{}, &Team{}, &TeamMember{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
 	seedIfEmpty(db)
@@ -492,15 +491,6 @@ func requireAdmin(c fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "admin only"})
 	}
 	return c.Next()
-}
-
-// randomToken returns a URL-safe hex string of n random bytes.
-func randomToken(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return ""
-	}
-	return hex.EncodeToString(b)
 }
 
 // newID returns a UUID v7 string (time-ordered primary key for all tables).

@@ -21,7 +21,7 @@ const scopeLabels = [
   's3',
   'variables',
   'keys',
-  'api-mcp',
+  'api-keys',
   'teams',
 ] as const
 </script>

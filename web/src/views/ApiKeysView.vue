@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,13 +15,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { useApiMcpStore } from '@/stores'
-import { Plug, Plus, Copy, Check, Power, Trash2 } from '@lucide/vue'
+import { useApiKeysStore } from '@/stores'
+import { Copy, Check, Plus, Trash2 } from '@lucide/vue'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 
-const store = useApiMcpStore()
+const store = useApiKeysStore()
 const showKey = ref(false)
-const showMcp = ref(false)
 
 const copied = ref<string | null>(null)
 async function copy(text: string, id: string) {
@@ -47,28 +43,17 @@ function addKey() {
   showKey.value = false
 }
 
-const newMcp = ref({ name: '', url: '', transport: 'http' as 'http' | 'sse' | 'stdio', apiKeyId: '' })
-function addMcp() {
-  if (!newMcp.value.name || !newMcp.value.url || !newMcp.value.apiKeyId) return
-  store.addMcp({ ...newMcp.value, enabled: true })
-  newMcp.value = { name: '', url: '', transport: 'http', apiKeyId: '' }
-  showMcp.value = false
-}
-
-const apiKeyOptions = computed(() => store.apiKeys)
-
-// delete confirmation state (shared for API key + MCP endpoint)
-const deleteTarget = ref<{ kind: 'key' | 'mcp'; id: string; name: string } | null>(null)
+// delete confirmation state
+const deleteTarget = ref<{ kind: 'key'; id: string; name: string } | null>(null)
 const deleting = ref(false)
-function requestDelete(kind: 'key' | 'mcp', id: string, name: string) {
-  deleteTarget.value = { kind, id, name }
+function requestDelete(id: string, name: string) {
+  deleteTarget.value = { kind: 'key', id, name }
 }
 async function confirmDelete() {
   if (!deleteTarget.value || deleting.value) return
   deleting.value = true
   try {
-    if (deleteTarget.value.kind === 'key') store.revokeKey(deleteTarget.value.id)
-    else store.removeMcp(deleteTarget.value.id)
+    store.revokeKey(deleteTarget.value.id)
     deleteTarget.value = null
   } finally {
     deleting.value = false
@@ -149,7 +134,7 @@ async function confirmDelete() {
                   {{ k.expiresAt ? k.expiresAt.slice(0, 10) : 'never' }}
                 </td>
                 <td class="px-4 py-2">
-                  <Button variant="ghost" size="sm" type="button" @click="requestDelete('key', k.id, k.name)">
+                  <Button variant="ghost" size="sm" type="button" @click="requestDelete(k.id, k.name)">
                     <Trash2 class="size-3" />
                   </Button>
                 </td>
@@ -160,75 +145,9 @@ async function confirmDelete() {
       </Card>
     </section>
 
-    <section class="grid gap-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            <Plug class="size-5 text-primary" />MCP Endpoints
-          </h2>
-          <p class="text-sm text-muted-foreground">Expose this dashboard to AI agents via MCP.</p>
-        </div>
-        <Dialog v-model:open="showMcp">
-          <DialogTrigger as-child>
-            <Button>
-              <Plus class="mr-1 size-4" />New MCP
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add MCP endpoint</DialogTitle>
-              <DialogDescription>Requires an existing API key for auth.</DialogDescription>
-            </DialogHeader>
-            <div class="grid gap-2">
-              <input v-model="newMcp.name" placeholder="name" class="rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              <input v-model="newMcp.url" placeholder="https://..." class="rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              <select v-model="newMcp.transport" class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <option value="http">http</option>
-                <option value="sse">sse</option>
-                <option value="stdio">stdio</option>
-              </select>
-              <select v-model="newMcp.apiKeyId" class="rounded-md border border-input bg-background px-3 py-2 text-sm">
-                <option value="">select API key…</option>
-                <option v-for="k in apiKeyOptions" :key="k.id" :value="k.id">{{ k.name }} ({{ k.prefix }}…)</option>
-              </select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" @click="showMcp = false">Cancel</Button>
-              <Button @click="addMcp">Add</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-2">
-        <Card v-for="m in store.mcp" :key="m.id">
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle class="flex items-center gap-2 text-base">{{ m.name }}</CardTitle>
-              <Badge :variant="m.enabled ? 'default' : 'secondary'">
-                {{ m.enabled ? 'enabled' : 'disabled' }}
-              </Badge>
-            </div>
-            <CardDescription class="font-mono text-xs break-all">{{ m.url }}</CardDescription>
-          </CardHeader>
-          <CardContent class="flex items-center justify-between">
-            <Badge variant="outline" class="uppercase">{{ m.transport }}</Badge>
-            <div class="flex gap-1">
-              <Button variant="ghost" size="sm" @click="store.toggleMcp(m.id)">
-                <Power class="size-3" />
-              </Button>
-              <Button variant="ghost" size="sm" type="button" @click="requestDelete('mcp', m.id, m.name)">
-                <Trash2 class="size-3" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-
     <ConfirmDeleteDialog
       :open="deleteTarget !== null"
-      :item-name="deleteTarget?.kind === 'key' ? 'API key' : 'MCP endpoint'"
+      :item-name="'API key'"
       :confirm-text="deleteTarget?.name ?? ''"
       :loading="deleting"
       @update:open="(v: boolean) => { if (!v) deleteTarget = null }"

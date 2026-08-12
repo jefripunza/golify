@@ -81,7 +81,7 @@ async function submit() {
         <ul class="space-y-2 text-sm text-muted-foreground">
           <li class="flex gap-2"><span class="text-primary">✓</span> Deploy &amp; manage projects, environments, services</li>
           <li class="flex gap-2"><span class="text-primary">✓</span> Connect servers, sources and S3 storages</li>
-          <li class="flex gap-2"><span class="text-primary">✓</span> Keys, shared variables, teams, API keys &amp; MCP</li>
+          <li class="flex gap-2"><span class="text-primary">✓</span> Keys, shared variables, teams, API keys</li>
           <li class="flex gap-2"><span class="text-primary">✓</span> Real-time terminal &amp; logs over WebSocket</li>
         </ul>
         <p class="text-xs text-muted-foreground">

@@ -35,7 +35,7 @@ const items: MenuItem[] = [
   { label: 'S3 Storages', to: '/s3', icon: Database, group: 'infra' },
   { label: 'Shared Variables', to: '/variables', icon: Variable, group: 'infra' },
   { label: 'Keys', to: '/keys', icon: KeyRound, group: 'security' },
-  { label: 'API Keys & MCP', to: '/api-mcp', icon: Plug, group: 'security' },
+  { label: 'API Keys', to: '/api-keys', icon: Plug, group: 'security' },
   { label: 'Teams', to: '/teams', icon: Users, group: 'security' },
 ]
 

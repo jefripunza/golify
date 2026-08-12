@@ -18,7 +18,7 @@ const store = useTeamsStore()
 const teamId = computed(() => String(route.params.teamId))
 const team = computed(() => store.get(teamId.value))
 
-const scopes = ['projects', 'servers', 'sources', 's3', 'variables', 'keys', 'api-mcp', 'teams'] as const
+const scopes = ['projects', 'servers', 'sources', 's3', 'variables', 'keys', 'api-keys', 'teams'] as const
 </script>
 
 <template>

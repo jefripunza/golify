@@ -47,7 +47,7 @@ const router = createRouter({
 
         // Security
         { path: 'keys', name: 'keys', component: () => import('@/views/KeysView.vue'), ...requireAuth() },
-        { path: 'api-mcp', name: 'api-mcp', component: () => import('@/views/ApiMcpView.vue'), ...requireAuth() },
+        { path: 'api-keys', name: 'api-keys', component: () => import('@/views/ApiKeysView.vue'), ...requireAuth() },
         { path: 'teams', name: 'teams', component: () => import('@/views/TeamsView.vue'), ...requireAuth() },
         { path: 'teams/:teamId', name: 'team-detail', component: () => import('@/views/TeamDetailView.vue'), ...requireAuth() },
       ],

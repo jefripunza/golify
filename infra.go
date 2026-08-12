@@ -76,16 +76,6 @@ func registerInfra(r fiber.Router) {
 	c.Post("/api-keys", func(ctx fiber.Ctx) error { return createGeneric(ctx, &ApiKey{}) })
 	c.Delete("/api-keys/:id", func(ctx fiber.Ctx) error { return deleteGeneric(ctx, &ApiKey{}) })
 
-	c.Get("/mcp", func(ctx fiber.Ctx) error {
-		var rows []McpEndpoint
-		if err := db.Order("id desc").Find(&rows).Error; err != nil {
-			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return ctx.JSON(rows)
-	})
-	c.Post("/mcp", func(ctx fiber.Ctx) error { return createGeneric(ctx, &McpEndpoint{}) })
-	c.Delete("/mcp/:id", func(ctx fiber.Ctx) error { return deleteGeneric(ctx, &McpEndpoint{}) })
-
 	c.Get("/teams", func(ctx fiber.Ctx) error {
 		var rows []Team
 		if err := db.Preload("Members").Order("id desc").Find(&rows).Error; err != nil {

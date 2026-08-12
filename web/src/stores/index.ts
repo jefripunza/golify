@@ -7,7 +7,6 @@ import type {
   ApiKey,
   Environment,
   Key,
-  MCPEndpoint,
   Project,
   S3Storage,
   Server,
@@ -19,7 +18,6 @@ import type {
 import {
   mockApiKeys,
   mockKeys,
-  mockMCP,
   mockProjects,
   mockS3,
   mockServers,
@@ -97,9 +95,6 @@ function mapKey(d: any): Key {
 }
 function mapApiKey(d: any): ApiKey {
   return { id: String(d.id), name: d.name, prefix: d.prefix, scopes: d.scopes ?? [], createdAt: d.created_at, lastUsedAt: d.last_used_at ?? null, expiresAt: d.expires_at ?? null }
-}
-function mapMcp(d: any): MCPEndpoint {
-  return { id: String(d.id), name: d.name, url: d.url, transport: d.transport ?? 'http', apiKeyId: String(d.api_key_id ?? ''), enabled: d.enabled ?? true, createdAt: d.created_at }
 }
 function safeParse(x: string) { try { return JSON.parse(x) } catch { return {} } }
 function mapTeam(d: any): Team {
@@ -250,26 +245,27 @@ export const useKeysStore = defineStore('keys', () => {
   return { keys, pending, error, refresh }
 })
 
-// ─── API Keys & MCP ─────────────────────────────────────────────────────────
-export const useApiMcpStore = defineStore('apiMcp', () => {
+// ─── API Keys ──────────────────────────────────────────────────────────────
+export const useApiKeysStore = defineStore('apiKeys', () => {
   const ak = useResourceList<ApiKey>('api/v1/api-keys', mockApiKeys, mapApiKey)
-  const mcp = useResourceList<MCPEndpoint>('api/v1/mcp', mockMCP, mapMcp)
 
   async function revokeKey(id: string) {
     await authed().delete(`api/v1/api-keys/${id}`).json<any>()
     await ak.refresh()
   }
-  async function removeMcp(id: string) {
-    await authed().delete(`api/v1/mcp/${id}`).json<any>()
-    await mcp.refresh()
+
+  async function addKey(input: { name: string; prefix: string; scopes: string[]; lastUsedAt: null; expiresAt: null }) {
+    const created = await authed().post('api/v1/api-keys', { json: { name: input.name, scopes: input.scopes } }).json<any>()
+    await ak.refresh()
+    return created
   }
 
   return {
-    apiKeys: ak.items, mcp: mcp.items,
-    pending: computed(() => ak.pending.value || mcp.pending.value),
-    error: computed(() => ak.error.value ?? mcp.error.value ?? null),
-    refresh: async () => { await Promise.all([ak.refresh(), mcp.refresh()]) },
-    revokeKey, removeMcp,
+    apiKeys: ak.items,
+    pending: computed(() => ak.pending.value),
+    error: computed(() => ak.error.value ?? null),
+    refresh: async () => { await ak.refresh() },
+    revokeKey, addKey,
   }
 })
 

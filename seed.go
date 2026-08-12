@@ -18,7 +18,7 @@ func seedIfEmpty(db *gorm.DB) {
 	seedS3(db)
 	seedVariables(db)
 	seedKeys(db)
-	seedApiKeysAndMcp(db)
+	seedApiKeys(db)
 	seedTeams(db)
 }
 
@@ -158,8 +158,8 @@ func seedKeys(db *gorm.DB) {
 	logSeed("seeded 2 ssh keys")
 }
 
-// ─── api keys + mcp ────────────────────────────────────────────────────────
-func seedApiKeysAndMcp(db *gorm.DB) {
+// ─── api keys ─────────────────────────────────────────────────────────────
+func seedApiKeys(db *gorm.DB) {
 	var count int64
 	if err := db.Model(&ApiKey{}).Count(&count).Error; err != nil || count > 0 {
 		return
@@ -174,16 +174,7 @@ func seedApiKeysAndMcp(db *gorm.DB) {
 			logSeed("apikey failed: " + err.Error())
 		}
 	}
-	mcpRows := []McpEndpoint{
-		{Name: "hindsight", URL: "http://127.0.0.1:9999/mcp", Transport: "http", ApiKeyID: apiRows[0].ID, Enabled: true},
-		{Name: "9router", URL: "https://ai.jefripunza.com/mcp", Transport: "sse", ApiKeyID: apiRows[1].ID, Enabled: true},
-	}
-	for i := range mcpRows {
-		if err := db.Create(&mcpRows[i]).Error; err != nil {
-			logSeed("mcp failed: " + err.Error())
-		}
-	}
-	logSeed("seeded 2 api keys + 2 mcp endpoints")
+	logSeed("seeded 2 api keys")
 }
 
 // ─── teams ─────────────────────────────────────────────────────────────────

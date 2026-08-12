@@ -4,10 +4,8 @@ import (
 	"errors"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"gorm.io/gorm"
 )
 
 // domainRegex matches a hostname: one or more labels, dot-separated.
@@ -32,15 +30,6 @@ func validDomainSuffix(host string) bool {
 		}
 	}
 	return false
-}
-
-// DomainEntry is a standalone domain/subdomain entry in the global Domains
-// list (sidebar menu "Domains"). Unlike Domain (which belongs to an
-// Environment), these are free-standing records the user manages manually.
-type DomainEntry struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	Host      string    `gorm:"size:255;not null;uniqueIndex" json:"host"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // normalizeDomain strips scheme/path/query and lowercases, returns bare host.
@@ -85,9 +74,9 @@ func normalizeDomain(raw string) (string, error) {
 func registerDomains(r fiber.Router) {
 	auth := r.Group("/domains", requireAuth)
 
-	// list all
+	// list all (domains table — single source of truth)
 	auth.Get("/", func(c fiber.Ctx) error {
-		var rows []DomainEntry
+		var rows []Domain
 		if err := db.Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -97,7 +86,8 @@ func registerDomains(r fiber.Router) {
 	// create
 	auth.Post("/", func(c fiber.Ctx) error {
 		var body struct {
-			Host string `json:"host"`
+			Host          string `json:"host"`
+			EnvironmentID string `json:"environment_id"`
 		}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
@@ -108,22 +98,23 @@ func registerDomains(r fiber.Router) {
 		}
 		// server-side duplicate check (unique index would also catch)
 		var count int64
-		db.Model(&DomainEntry{}).Where("host = ?", host).Count(&count)
+		db.Model(&Domain{}).Where("host = ?", host).Count(&count)
 		if count > 0 {
 			return c.Status(409).JSON(fiber.Map{"error": "domain already exists"})
 		}
-		row := DomainEntry{Host: host}
+		row := Domain{Host: host, EnvironmentID: body.EnvironmentID}
 		if err := db.Create(&row).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(201).JSON(row)
 	})
 
-	// update (edit host)
+	// update (edit host / link environment)
 	auth.Patch("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
 		var body struct {
-			Host string `json:"host"`
+			Host          string `json:"host"`
+			EnvironmentID string `json:"environment_id"`
 		}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
@@ -132,17 +123,18 @@ func registerDomains(r fiber.Router) {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
-		var row DomainEntry
+		var row Domain
 		if err := db.First(&row, "id = ?", id).Error; err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "domain not found"})
 		}
 		// duplicate check excluding self
 		var count int64
-		db.Model(&DomainEntry{}).Where("host = ? AND id <> ?", host, id).Count(&count)
+		db.Model(&Domain{}).Where("host = ? AND id <> ?", host, id).Count(&count)
 		if count > 0 {
 			return c.Status(409).JSON(fiber.Map{"error": "domain already exists"})
 		}
 		row.Host = host
+		row.EnvironmentID = body.EnvironmentID
 		if err := db.Save(&row).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -152,7 +144,7 @@ func registerDomains(r fiber.Router) {
 	// delete
 	auth.Delete("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
-		if err := db.Delete(&DomainEntry{}, "id = ?", id).Error; err != nil {
+		if err := db.Delete(&Domain{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": id})
@@ -171,9 +163,7 @@ func registerDomains(r fiber.Router) {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 		var count int64
-		db.Model(&DomainEntry{}).Where("host = ?", host).Count(&count)
+		db.Model(&Domain{}).Where("host = ?", host).Count(&count)
 		return c.JSON(fiber.Map{"exists": count > 0})
 	})
-
-	_ = gorm.ErrRecordNotFound // keep gorm import used (pattern)
 }

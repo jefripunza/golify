@@ -110,17 +110,7 @@ export interface ApiKey {
   expiresAt: string | null
 }
 
-export interface MCPEndpoint {
-  id: ID
-  name: string
-  url: string
-  transport: 'stdio' | 'sse' | 'http'
-  apiKeyId: ID
-  enabled: boolean
-  createdAt: string
-}
-
-export type ResourceScope = 'projects' | 'servers' | 'sources' | 's3' | 'variables' | 'keys' | 'api-mcp' | 'teams'
+export type ResourceScope = 'projects' | 'servers' | 'sources' | 's3' | 'variables' | 'keys' | 'api-keys' | 'teams'
 
 export interface TeamMember {
   id: ID
