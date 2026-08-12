@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { onMounted, onUnmounted, ref } from 'vue'
 import {
   Card,
   CardContent,
@@ -9,10 +9,91 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useProjectsStore } from '@/stores'
-import { FolderTree, Plus } from '@lucide/vue'
+import type { Project } from '@/lib/types'
+import { FolderTree, Plus, Pencil, Loader2, Trash2 } from '@lucide/vue'
 
 const projects = useProjectsStore()
+
+// refresh list when the view mounts (SPA navigation may skip watchEffect)
+onMounted(() => {
+  void projects.refresh()
+})
+// periodic refresh so cluster status stays live
+const refreshTimer = setInterval(() => void projects.refresh(), 30_000)
+onUnmounted(() => clearInterval(refreshTimer))
+
+// dialog state (create + edit)
+const dialogOpen = ref(false)
+const editing = ref<Project | null>(null)
+const name = ref('')
+const description = ref('')
+const creating = ref(false)
+const deleting = ref<string | null>(null)
+const error = ref('')
+
+const statusColor: Record<string, string> = {
+  Running: 'bg-emerald-500/15 text-emerald-600',
+  Stopped: 'bg-amber-500/15 text-amber-600',
+  Unknown: 'bg-muted text-muted-foreground',
+}
+
+function openCreate() {
+  editing.value = null
+  name.value = ''
+  description.value = ''
+  error.value = ''
+  dialogOpen.value = true
+}
+
+function openEdit(p: Project) {
+  editing.value = p
+  name.value = p.name
+  description.value = p.description ?? ''
+  error.value = ''
+  dialogOpen.value = true
+}
+
+async function submit() {
+  if (!name.value.trim() || creating.value) return
+  creating.value = true
+  error.value = ''
+  try {
+    if (editing.value) {
+      await projects.update(editing.value.id, name.value.trim(), description.value.trim())
+    } else {
+      await projects.create(name.value.trim(), description.value.trim())
+    }
+    dialogOpen.value = false
+  } catch (e: any) {
+    error.value = e?.message || 'Gagal menyimpan project'
+  } finally {
+    creating.value = false
+  }
+}
+
+async function removeProject(id: string) {
+  if (deleting.value) return
+  deleting.value = id
+  try {
+    await projects.remove(id)
+  } catch (e: any) {
+    error.value = e?.message || 'Gagal menghapus project'
+  } finally {
+    deleting.value = null
+  }
+}
 </script>
 
 <template>
@@ -21,39 +102,80 @@ const projects = useProjectsStore()
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
         <p class="text-sm text-muted-foreground">
-          {{ projects.projects.length }} project(s).
-          Click into one to see environments and services.
+          Setiap project adalah satu Kubernetes cluster (kind). Nama cluster = ID project (UUID v7).
         </p>
       </div>
-      <Button disabled>
-        <Plus class="mr-1 size-4" />New project
+      <Button size="sm" @click="openCreate">
+        <Plus class="mr-1 size-4" /> New Project
       </Button>
     </div>
 
     <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-      <RouterLink
-        v-for="p in projects.projects"
-        :key="p.id"
-        :to="`/projects/${p.id}`"
-        class="block transition-transform hover:scale-[1.01]"
-      >
-        <Card>
-          <CardHeader>
-            <div class="flex items-center justify-between">
-              <CardTitle class="flex items-center gap-2 text-base">
-                <FolderTree class="size-4 text-primary" />
-                {{ p.name }}
-              </CardTitle>
-              <Badge variant="secondary">{{ p.environments.length }} env</Badge>
-            </div>
-            <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ p.description }}</CardDescription>
-          </CardHeader>
-          <CardContent class="text-xs text-muted-foreground">
-            <p>{{ p.environments.reduce((a, e) => a + e.services.length, 0) }} services total</p>
-            <p class="mt-1">{{ p.createdAt.slice(0, 10) }}</p>
-          </CardContent>
-        </Card>
-      </RouterLink>
+      <Card v-for="p in projects.projects" :key="p.id">
+        <CardHeader>
+          <div class="flex items-center justify-between gap-2">
+            <CardTitle class="flex items-center gap-2 text-base">
+              <FolderTree class="size-4 text-primary" />
+              {{ p.name }}
+            </CardTitle>
+            <Badge :class="statusColor[p.clusterStatus ?? 'Unknown']">
+              {{ p.clusterStatus ?? 'Unknown' }}
+            </Badge>
+          </div>
+          <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ p.description || '—' }}</CardDescription>
+        </CardHeader>
+        <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
+          <span class="font-mono">{{ p.id }}</span>
+          <div class="flex items-center gap-1">
+            <Button variant="ghost" size="sm" type="button" @click="openEdit(p)">
+              <Pencil class="size-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              class="text-destructive hover:text-destructive"
+              :disabled="deleting === p.id"
+              @click="removeProject(p.id)"
+            >
+              <Loader2 v-if="deleting === p.id" class="size-3 animate-spin" />
+              <Trash2 v-else class="size-3" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
+
+    <Dialog v-model:open="dialogOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ editing ? 'Edit Project' : 'New Project' }}</DialogTitle>
+          <DialogDescription>
+            {{ editing
+              ? 'Ubah nama atau deskripsi project. Nama cluster tetap ID project (UUID v7).'
+              : 'Buat cluster baru. Hanya name dan description yang diperlukan.' }}
+          </DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-3" @submit.prevent="submit">
+          <div class="grid gap-1.5">
+            <Label for="p-name">Name</Label>
+            <Input id="p-name" v-model="name" placeholder="mis. my-app" required />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="p-desc">Description</Label>
+            <Textarea id="p-desc" v-model="description" rows="2" placeholder="Opsional — deskripsi project" />
+          </div>
+          <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
+          <DialogFooter>
+            <Button type="submit" :disabled="creating || !name.trim()">
+              <Loader2 v-if="creating" class="mr-1 size-4 animate-spin" />
+              {{ creating
+                ? (editing ? 'Menyimpan…' : 'Creating cluster…')
+                : (editing ? 'Simpan Perubahan' : 'Create Project') }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

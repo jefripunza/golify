@@ -3,32 +3,41 @@ import { onMounted, ref } from 'vue'
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Globe, Plus, Trash2, Loader2 } from '@lucide/vue'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Globe, Plus, Pencil, Trash2, Loader2 } from '@lucide/vue'
 import { domainSchema } from '@/lib/validators'
 import { getAuth } from '@/lib/api'
 
 interface DomainEntry {
-  id: number
+  id: string
   host: string
   created_at: string
 }
 
 const auth = getAuth()
 const items = ref<DomainEntry[]>([])
-const host = ref('')
+const loaded = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const fieldError = ref('')
-const loaded = ref(false)
+
+// dialog state
+const dialogOpen = ref(false)
+const editingId = ref<string | null>(null)
+const host = ref('')
 
 function apiHeaders() {
   return {
@@ -49,11 +58,26 @@ async function load() {
 }
 
 function preview() {
-  // live-strip scheme for display-only hint (validation happens on submit)
   let d = host.value.trim()
   if (d.includes('://')) d = d.slice(d.indexOf('://') + 3)
   d = d.replace(/[/?#].*$/, '').replace(/\.+$/, '').toLowerCase()
   return d || ''
+}
+
+function openCreate() {
+  editingId.value = null
+  host.value = ''
+  fieldError.value = ''
+  error.value = ''
+  dialogOpen.value = true
+}
+
+function openEdit(d: DomainEntry) {
+  editingId.value = d.id
+  host.value = d.host
+  fieldError.value = ''
+  error.value = ''
+  dialogOpen.value = true
 }
 
 async function submit() {
@@ -66,8 +90,9 @@ async function submit() {
   }
   saving.value = true
   try {
-    const res = await fetch('/api/v1/domains', {
-      method: 'POST',
+    const isEdit = editingId.value !== null
+    const res = await fetch(`/api/v1/domains${isEdit ? `/${editingId.value}` : ''}`, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({ host: parsed.data }),
     })
@@ -76,8 +101,13 @@ async function submit() {
       error.value = data.error ?? 'Gagal menyimpan domain'
       return
     }
-    items.value.unshift(data)
-    host.value = ''
+    if (isEdit) {
+      const i = items.value.findIndex((d) => d.id === editingId.value)
+      if (i >= 0) items.value[i] = data
+    } else {
+      items.value.unshift(data)
+    }
+    dialogOpen.value = false
   } catch {
     error.value = 'Terjadi kesalahan koneksi'
   } finally {
@@ -85,7 +115,7 @@ async function submit() {
   }
 }
 
-async function remove(id: number) {
+async function remove(id: string) {
   try {
     await fetch(`/api/v1/domains/${id}`, { method: 'DELETE', headers: apiHeaders() })
     items.value = items.value.filter((d) => d.id !== id)
@@ -105,45 +135,15 @@ onMounted(load)
         <p class="text-sm text-muted-foreground">
           Kelola daftar domain root. <code class="rounded bg-muted px-1.5 py-0.5">http://</code> /
           <code class="rounded bg-muted px-1.5 py-0.5">https://</code> otomatis dihilangkan saat disimpan.
-          Subdomain tidak diizinkan.
         </p>
       </div>
-      <Badge variant="outline" class="font-mono">{{ items.length }} total</Badge>
+      <div class="flex items-center gap-2">
+        <Badge variant="outline" class="font-mono">{{ items.length }} total</Badge>
+        <Button size="sm" @click="openCreate">
+          <Plus class="mr-1 size-4" /> Tambah Domain
+        </Button>
+      </div>
     </div>
-
-    <Card>
-      <CardHeader>
-        <CardTitle class="flex items-center gap-2 text-base">
-          <Globe class="size-4 text-primary" /> Tambah Domain
-        </CardTitle>
-        <CardDescription>Masukkan nama domain root (contoh: example.com). Subdomain (mis. sub.example.com) tidak diizinkan.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form class="flex flex-col gap-3 sm:flex-row sm:items-start" @submit.prevent="submit">
-          <div class="flex-1 space-y-2">
-            <Label for="d">Nama Domain</Label>
-            <Input
-              id="d"
-              v-model="host"
-              placeholder="example.com"
-              :disabled="saving"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
-            <p v-if="!fieldError && preview()" class="text-xs text-muted-foreground">
-              Akan disimpan sebagai: <span class="font-mono">{{ preview() }}</span>
-            </p>
-            <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
-          </div>
-          <Button type="submit" class="mt-6" :disabled="saving || !host.trim()">
-            <Loader2 v-if="saving" class="mr-1 size-4 animate-spin" />
-            <Plus v-else class="mr-1 size-4" />
-            Simpan
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
 
     <Card>
       <CardContent class="p-0">
@@ -151,7 +151,7 @@ onMounted(load)
           <p class="p-4 text-sm text-muted-foreground">Memuat…</p>
         </template>
         <template v-else-if="items.length === 0">
-          <p class="p-4 text-sm text-muted-foreground">Belum ada domain. Tambahkan yang pertama di atas.</p>
+          <p class="p-4 text-sm text-muted-foreground">Belum ada domain. Klik "Tambah Domain" untuk menambah.</p>
         </template>
         <table v-else class="w-full text-sm">
           <thead class="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -171,7 +171,10 @@ onMounted(load)
                 {{ d.created_at ? d.created_at.slice(0, 16).replace('T', ' ') : '—' }}
               </td>
               <td class="px-4 py-2 text-right">
-                <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="remove(d.id)">
+                <Button variant="ghost" size="sm" type="button" @click="openEdit(d)">
+                  <Pencil class="size-4" />
+                </Button>
+                <Button variant="ghost" size="sm" type="button" class="text-destructive hover:text-destructive" @click="remove(d.id)">
                   <Trash2 class="size-4" />
                 </Button>
               </td>
@@ -180,5 +183,43 @@ onMounted(load)
         </table>
       </CardContent>
     </Card>
+
+    <Dialog v-model:open="dialogOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{{ editingId ? 'Edit Domain' : 'Tambah Domain' }}</DialogTitle>
+          <DialogDescription>
+            Masukkan nama domain root (contoh: example.com). Subdomain (mis. sub.example.com) tidak diizinkan.
+          </DialogDescription>
+        </DialogHeader>
+        <form class="grid gap-3" @submit.prevent="submit">
+          <div class="grid gap-1.5">
+            <Label for="d-host">Nama Domain</Label>
+            <Input
+              id="d-host"
+              v-model="host"
+              placeholder="example.com"
+              :disabled="saving"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
+            <p v-if="!fieldError && preview()" class="text-xs text-muted-foreground">
+              Akan disimpan sebagai: <span class="font-mono">{{ preview() }}</span>
+            </p>
+            <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="submit"
+              :disabled="saving || !host.trim()"
+            >
+              <Loader2 v-if="saving" class="mr-1 size-4 animate-spin" />
+              {{ saving ? 'Menyimpan…' : editingId ? 'Simpan Perubahan' : 'Simpan' }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

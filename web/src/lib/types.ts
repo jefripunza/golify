@@ -32,6 +32,7 @@ export interface Project {
   name: string
   description: string
   sourceId?: ID
+  clusterStatus?: string
   environments: Environment[]
   createdAt: string
 }

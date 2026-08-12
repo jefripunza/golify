@@ -131,8 +131,21 @@ export function authed() {
         retry: { limit: 2, methods: ['get'] },
         hooks: {
           beforeRequest: [
-            (request: { headers: { set: (k: string, v: string) => void } }) => {
-              request.headers.set('Authorization', `Bearer ${auth.token}`)
+            ({ request, options }: { request: Request; options: { headers?: HeadersInit } }) => {
+              // ky v2: hook receives ({ request, options }). Set the token
+              // on both request.headers and options.headers defensively.
+              try {
+                request.headers.set('Authorization', `Bearer ${auth.token}`)
+              } catch {
+                /* ignore */
+              }
+              try {
+                const headers = new Headers(options.headers)
+                headers.set('Authorization', `Bearer ${auth.token}`)
+                options.headers = headers
+              } catch {
+                /* ignore */
+              }
             },
           ],
         } as any,

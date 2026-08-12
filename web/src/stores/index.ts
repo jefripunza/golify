@@ -27,7 +27,7 @@ import {
   mockTeams,
   mockVars,
 } from '@/lib/mock'
-import { authed } from '@/lib/api'
+import { authed, getAuth } from '@/lib/api'
 
 // ─── generic list resource helper ─────────────────────────────────────────
 // Returns { items, refresh, pending, error } with mock fallback on any failure.
@@ -141,6 +141,7 @@ function mapProject(p: any): Project {
     name: p.name,
     description: p.description,
     sourceId: p.source_id || undefined,
+    clusterStatus: p.cluster_status || 'Unknown',
     environments: (p.environments ?? []).map(mapEnv),
     createdAt: p.created_at,
   }
@@ -160,7 +161,40 @@ export const useProjectsStore = defineStore('projects', () => {
   }
   watchEffect(() => { void authed(); fetchOnce() })
 
+  // Token-reactive refetch: a 5s poll re-reads auth (storage/cookie may
+  // have changed since mount) and refetches when a token appears or the
+  // raw list is empty while auth exists. SPA navigation never re-mounts
+  // the store, so this poll is the safety net that keeps lists alive.
+  let lastToken = ''
+  setInterval(async () => {
+    const auth = getAuth()
+    const tok = auth?.token ?? ''
+    const emptyButAuthed = raw.value.length === 0 && tok !== ''
+    if (tok !== lastToken || emptyButAuthed) {
+      lastToken = tok
+      await fetchOnce()
+    }
+  }, 5_000)
+
   const projects = computed<Project[]>(() => raw.value.map(mapProject))
+
+  async function create(name: string, description: string) {
+    const created = await authed().post('api/v1/projects/', { json: { name, description } }).json<any>()
+    raw.value = [created, ...raw.value]
+    return created
+  }
+
+  async function remove(id: string) {
+    await authed().delete(`api/v1/projects/${id}`).json<any>()
+    raw.value = raw.value.filter((p) => p.id !== id)
+  }
+
+  async function update(id: string, name: string, description: string) {
+    const updated = await authed().patch(`api/v1/projects/${id}`, { json: { name, description } }).json<any>()
+    const i = raw.value.findIndex((p) => p.id === id)
+    if (i >= 0) raw.value[i] = updated
+    return updated
+  }
 
   function get(id: string): Project | undefined { return projects.value.find((p) => p.id === id) }
   function getEnv(projectId: string, envId: string): Environment | undefined {
@@ -178,7 +212,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

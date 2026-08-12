@@ -21,7 +21,16 @@ func registerProjects(r fiber.Router) {
 		if err := db.Preload("Envs").Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.JSON(rows)
+		// attach live kind cluster status for each project (id = cluster name)
+		type projectWithStatus struct {
+			Project
+			ClusterStatus string `json:"cluster_status"`
+		}
+		out := make([]projectWithStatus, 0, len(rows))
+		for _, p := range rows {
+			out = append(out, projectWithStatus{Project: p, ClusterStatus: kindClusterStatus(p.ID)})
+		}
+		return c.JSON(out)
 	})
 
 	auth.Post("/", func(c fiber.Ctx) error {
@@ -33,9 +42,20 @@ func registerProjects(r fiber.Router) {
 		if err := c.Bind().JSON(&body); err != nil || body.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
 		}
+		// Project = Kubernetes cluster. The project ID (UUID v7) becomes the
+		// kind cluster name.
 		p := Project{Name: body.Name, Description: body.Description, SourceID: body.SourceID}
+		p.ID = newID() // explicit so we know the cluster name before creating
 		if err := db.Create(&p).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// create the kind cluster named after the project UUID
+		clusterName := p.ID
+		if err := kindCreateCluster(clusterName); err != nil {
+			// cluster creation failed — roll back the DB row so the list
+			// only shows clusters that actually exist
+			db.Delete(&Project{}, "id = ?", p.ID)
+			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
 		return c.Status(201).JSON(p)
 	})
@@ -53,11 +73,37 @@ func registerProjects(r fiber.Router) {
 		return c.JSON(p)
 	})
 
+	// update (edit name/description — cluster name stays the UUID)
+	auth.Patch("/:id", func(c fiber.Ctx) error {
+		id := c.Params("id")
+		var body struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+		}
+		var p Project
+		if err := db.First(&p, "id = ?", id).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
+		}
+		if body.Name != "" {
+			p.Name = body.Name
+		}
+		p.Description = body.Description
+		if err := db.Save(&p).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(p)
+	})
+
 	auth.Delete("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
 		if err := db.Delete(&Project{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		// also tear down the kind cluster named after the project UUID
+		kindDeleteCluster(id)
 		return c.JSON(fiber.Map{"deleted": id})
 	})
 

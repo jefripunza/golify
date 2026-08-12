@@ -93,6 +93,36 @@ func registerDomains(r fiber.Router) {
 		return c.Status(201).JSON(row)
 	})
 
+	// update (edit host)
+	auth.Patch("/:id", func(c fiber.Ctx) error {
+		id := c.Params("id")
+		var body struct {
+			Host string `json:"host"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+		}
+		host, err := normalizeDomain(body.Host)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		var row DomainEntry
+		if err := db.First(&row, "id = ?", id).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "domain not found"})
+		}
+		// duplicate check excluding self
+		var count int64
+		db.Model(&DomainEntry{}).Where("host = ? AND id <> ?", host, id).Count(&count)
+		if count > 0 {
+			return c.Status(409).JSON(fiber.Map{"error": "domain already exists"})
+		}
+		row.Host = host
+		if err := db.Save(&row).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(row)
+	})
+
 	// delete
 	auth.Delete("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
