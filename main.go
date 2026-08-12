@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -48,10 +49,11 @@ import (
 var webDist embed.FS
 
 const (
-	portHTTP  = ":80"
-	portHTTPS = ":443"
-	portFE    = 3000
-	dataDir   = "data"
+	portHTTP   = ":80"
+	portHTTPS  = ":443"
+	portFE     = 3000
+	portDual   = ":8080" // dual-mode (HTTP+HTTPS) — for Cloudflare tunnel single-rule
+	dataDir    = "data"
 )
 
 var (
@@ -165,13 +167,31 @@ func main() {
 		}
 	}()
 
+	// :8080 — dual-mode (HTTP + HTTPS on ONE port) for Cloudflare tunnel.
+	// Cloudflare ingress rules are per-hostname single-rule; a hostname can
+	// only point to one origin port. Serving both protocols on 8080 means
+	// http:// and https:// through the tunnel both reach the SPA/API.
+	dualApp := rootSPA("dual")
+	bindDual := envOr("GOTIFY_DUAL", portDual)
+	lnDual, err := net.Listen("tcp", bindDual)
+	if err != nil {
+		log.Fatalf("listen dual :8080: %v", err)
+	}
+	go func() {
+		log.Printf("DUAL (HTTP+HTTPS) listening on %s (SPA + API)", bindDual)
+		dual := &dualListener{Listener: lnDual, tlsCfg: buildTLSConfig()}
+		if err := serveUnified(dual, dualApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("dual server: %v", err)
+		}
+	}()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	log.Println("shutdown signal received")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for _, app := range []*fiber.App{httpApp, httpsApp, dashApp} {
+	for _, app := range []*fiber.App{httpApp, httpsApp, dashApp, dualApp} {
 		_ = app.ShutdownWithContext(ctx)
 	}
 	log.Println("bye")
@@ -338,6 +358,41 @@ func (r *recWriter) Write(b []byte) (int, error) { r.body = append(r.body, b...)
 func (r *recWriter) WriteHeader(s int)           { r.status = s }
 
 // ----- TLS ------------------------------------------------------------------
+
+// dualListener accepts both plain HTTP and TLS on the same port. It peeks
+// the first byte of each connection: 0x16 (TLS handshake record) → wrap the
+// conn in tls.Server with SNI-based cert lookup; anything else → plain HTTP.
+// This lets one Cloudflare ingress rule serve both http:// and https://.
+type dualListener struct {
+	net.Listener
+	tlsCfg *tls.Config
+}
+
+func (dl *dualListener) Accept() (net.Conn, error) {
+	raw, err := dl.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	br := bufio.NewReader(raw)
+	first, err := br.Peek(1)
+	if err != nil {
+		raw.Close()
+		return nil, err
+	}
+	// TLS record content type for a handshake is 0x16.
+	if first[0] == 0x16 {
+		return tls.Server(&peekConn{Conn: raw, r: br}, dl.tlsCfg), nil
+	}
+	return &peekConn{Conn: raw, r: br}, nil
+}
+
+// peekConn is a net.Conn whose Read drains the buffered reader first.
+type peekConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (pc *peekConn) Read(b []byte) (int, error) { return pc.r.Read(b) }
 
 func buildTLSConfig() *tls.Config {
 	return &tls.Config{
