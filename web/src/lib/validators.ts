@@ -4,23 +4,23 @@ import { z } from 'zod'
 export const emailSchema = z
   .string()
   .trim()
-  .min(1, 'Email wajib diisi')
-  .email('Format email tidak valid')
+  .min(1, 'Email is required')
+  .email('Invalid email format')
 
 // Strong password policy:
 // - min 8 chars
 // - at least one lowercase, one uppercase, one digit, one symbol
 export const strongPasswordSchema = z
   .string()
-  .min(8, 'Password minimal 8 karakter')
-  .regex(/[a-z]/, 'Harus ada huruf kecil (a-z)')
-  .regex(/[A-Z]/, 'Harus ada huruf besar (A-Z)')
-  .regex(/[0-9]/, 'Harus ada angka (0-9)')
-  .regex(/[^a-zA-Z0-9]/, 'Harus ada simbol (mis. !@#$%)')
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[a-z]/, 'Must include a lowercase letter (a-z)')
+  .regex(/[A-Z]/, 'Must include an uppercase letter (A-Z)')
+  .regex(/[0-9]/, 'Must include a number (0-9)')
+  .regex(/[^a-zA-Z0-9]/, 'Must include a symbol (e.g. !@#$%)')
 
 export const loginSchema = z.object({
   email: emailSchema,
-  password: z.string().min(1, 'Password wajib diisi'),
+  password: z.string().min(1, 'Password is required'),
 })
 
 export const onboardSchema = z
@@ -30,7 +30,7 @@ export const onboardSchema = z
     confirm: z.string(),
   })
   .refine((d) => d.password === d.confirm, {
-    message: 'Password tidak sama dengan konfirmasi',
+    message: 'Passwords do not match',
     path: ['confirm'],
   })
 
@@ -44,7 +44,7 @@ export type OnboardValues = z.infer<typeof onboardSchema>
 export const domainSchema = z
   .string()
   .trim()
-  .min(1, 'Domain wajib diisi')
+  .min(1, 'Domain is required')
   .transform((raw) => {
     // strip scheme if present
     let d = raw.trim()
@@ -54,14 +54,14 @@ export const domainSchema = z
     d = d.replace(/\.+$/, '').toLowerCase()
     return d
   })
-  .refine((d) => d.length > 0, { message: 'Domain wajib diisi' })
+  .refine((d) => d.length > 0, { message: 'Domain is required' })
   // exactly two labels: label.label (root domain, NO subdomain)
   .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(d), {
-    message: 'Hanya domain root yang diizinkan (contoh: example.com). Subdomain tidak boleh.',
+    message: 'Only root domains are allowed (e.g. example.com). Subdomains are not permitted.',
   })
   .refine((d) => {
     const labels: string[] = d.split('.')
     return labels.length === 2 && labels.every((l: string) => l && l[0] !== '-' && l[l.length - 1] !== '-')
-  }, { message: 'Label domain tidak boleh diawali/diakhiri "-"' })
+  }, { message: 'Domain labels must not start/end with "-"' })
 
 export type DomainValues = z.infer<typeof domainSchema>

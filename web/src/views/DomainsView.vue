@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Globe, Plus, Pencil, Trash2, Loader2 } from '@lucide/vue'
 import { domainSchema } from '@/lib/validators'
-import { getAuth } from '@/lib/api'
+import { authed } from '@/lib/api'
 
 interface DomainEntry {
   id: string
@@ -26,10 +26,8 @@ interface DomainEntry {
   created_at: string
 }
 
-const auth = getAuth()
 const items = ref<DomainEntry[]>([])
 const loaded = ref(false)
-const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const fieldError = ref('')
@@ -39,17 +37,10 @@ const dialogOpen = ref(false)
 const editingId = ref<string | null>(null)
 const host = ref('')
 
-function apiHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-  }
-}
-
 async function load() {
   try {
-    const res = await fetch('/api/v1/domains', { headers: apiHeaders() })
-    if (res.ok) items.value = await res.json()
+    const res = await authed().get('api/v1/domains')
+    if (res.status === 200) items.value = await res.json()
   } catch {
     /* non-fatal */
   } finally {
@@ -85,31 +76,23 @@ async function submit() {
   fieldError.value = ''
   const parsed = domainSchema.safeParse(host.value)
   if (!parsed.success) {
-    fieldError.value = parsed.error.issues[0]?.message ?? 'Domain tidak valid'
+    fieldError.value = parsed.error.issues[0]?.message ?? 'Invalid domain'
     return
   }
   saving.value = true
   try {
     const isEdit = editingId.value !== null
-    const res = await fetch(`/api/v1/domains${isEdit ? `/${editingId.value}` : ''}`, {
-      method: isEdit ? 'PATCH' : 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({ host: parsed.data }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      error.value = data.error ?? 'Gagal menyimpan domain'
-      return
-    }
     if (isEdit) {
+      const data = await authed().patch(`api/v1/domains/${editingId.value}`, { json: { host: parsed.data } }).json<any>()
       const i = items.value.findIndex((d) => d.id === editingId.value)
       if (i >= 0) items.value[i] = data
     } else {
+      const data = await authed().post('api/v1/domains', { json: { host: parsed.data } }).json<any>()
       items.value.unshift(data)
     }
     dialogOpen.value = false
-  } catch {
-    error.value = 'Terjadi kesalahan koneksi'
+  } catch (e: any) {
+    error.value = e?.message || 'Failed to save domain'
   } finally {
     saving.value = false
   }
@@ -117,7 +100,7 @@ async function submit() {
 
 async function remove(id: string) {
   try {
-    await fetch(`/api/v1/domains/${id}`, { method: 'DELETE', headers: apiHeaders() })
+    await authed().delete(`api/v1/domains/${id}`)
     items.value = items.value.filter((d) => d.id !== id)
   } catch {
     /* non-fatal */
@@ -133,14 +116,14 @@ onMounted(load)
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Domains</h1>
         <p class="text-sm text-muted-foreground">
-          Kelola daftar domain root. <code class="rounded bg-muted px-1.5 py-0.5">http://</code> /
-          <code class="rounded bg-muted px-1.5 py-0.5">https://</code> otomatis dihilangkan saat disimpan.
+          Manage root domains. <code class="rounded bg-muted px-1.5 py-0.5">http://</code> /
+          <code class="rounded bg-muted px-1.5 py-0.5">https://</code> is stripped automatically when saving.
         </p>
       </div>
       <div class="flex items-center gap-2">
         <Badge variant="outline" class="font-mono">{{ items.length }} total</Badge>
         <Button size="sm" @click="openCreate">
-          <Plus class="mr-1 size-4" /> Tambah Domain
+          <Plus class="mr-1 size-4" /> Add Domain
         </Button>
       </div>
     </div>
@@ -148,17 +131,17 @@ onMounted(load)
     <Card>
       <CardContent class="p-0">
         <template v-if="!loaded">
-          <p class="p-4 text-sm text-muted-foreground">Memuat…</p>
+          <p class="p-4 text-sm text-muted-foreground">Loading…</p>
         </template>
         <template v-else-if="items.length === 0">
-          <p class="p-4 text-sm text-muted-foreground">Belum ada domain. Klik "Tambah Domain" untuk menambah.</p>
+          <p class="p-4 text-sm text-muted-foreground">No domains yet. Click "Add Domain" to add one.</p>
         </template>
         <table v-else class="w-full text-sm">
           <thead class="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
               <th class="px-4 py-2">Domain</th>
-              <th class="px-4 py-2">Ditambahkan</th>
-              <th class="px-4 py-2 text-right">Aksi</th>
+              <th class="px-4 py-2">Added</th>
+              <th class="px-4 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
@@ -187,14 +170,14 @@ onMounted(load)
     <Dialog v-model:open="dialogOpen">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{{ editingId ? 'Edit Domain' : 'Tambah Domain' }}</DialogTitle>
+          <DialogTitle>{{ editingId ? 'Edit Domain' : 'Add Domain' }}</DialogTitle>
           <DialogDescription>
-            Masukkan nama domain root (contoh: example.com). Subdomain (mis. sub.example.com) tidak diizinkan.
+            Enter a root domain (e.g. example.com). Subdomains (e.g. sub.example.com) are not allowed.
           </DialogDescription>
         </DialogHeader>
         <form class="grid gap-3" @submit.prevent="submit">
           <div class="grid gap-1.5">
-            <Label for="d-host">Nama Domain</Label>
+            <Label for="d-host">Domain Name</Label>
             <Input
               id="d-host"
               v-model="host"
@@ -205,17 +188,14 @@ onMounted(load)
             />
             <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
             <p v-if="!fieldError && preview()" class="text-xs text-muted-foreground">
-              Akan disimpan sebagai: <span class="font-mono">{{ preview() }}</span>
+              Will be saved as: <span class="font-mono">{{ preview() }}</span>
             </p>
             <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
           </div>
           <DialogFooter>
-            <Button
-              type="submit"
-              :disabled="saving || !host.trim()"
-            >
+            <Button type="submit" :disabled="saving || !host.trim()">
               <Loader2 v-if="saving" class="mr-1 size-4 animate-spin" />
-              {{ saving ? 'Menyimpan…' : editingId ? 'Simpan Perubahan' : 'Simpan' }}
+              {{ saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save' }}
             </Button>
           </DialogFooter>
         </form>

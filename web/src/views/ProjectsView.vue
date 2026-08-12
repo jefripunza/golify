@@ -77,7 +77,7 @@ async function submit() {
     }
     dialogOpen.value = false
   } catch (e: any) {
-    error.value = e?.message || 'Gagal menyimpan project'
+    error.value = e?.message || 'Failed to save project'
   } finally {
     creating.value = false
   }
@@ -89,7 +89,7 @@ async function removeProject(id: string) {
   try {
     await projects.remove(id)
   } catch (e: any) {
-    error.value = e?.message || 'Gagal menghapus project'
+    error.value = e?.message || 'Failed to delete project'
   } finally {
     deleting.value = null
   }
@@ -102,7 +102,7 @@ async function removeProject(id: string) {
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
         <p class="text-sm text-muted-foreground">
-          Setiap project adalah satu Kubernetes cluster (kind). Nama cluster = ID project (UUID v7).
+          Each project is one Kubernetes cluster (kind). The cluster name = project ID (UUID v7).
         </p>
       </div>
       <Button size="sm" @click="openCreate">
@@ -152,8 +152,8 @@ async function removeProject(id: string) {
           <DialogTitle>{{ editing ? 'Edit Project' : 'New Project' }}</DialogTitle>
           <DialogDescription>
             {{ editing
-              ? 'Ubah nama atau deskripsi project. Nama cluster tetap ID project (UUID v7).'
-              : 'Buat cluster baru. Hanya name dan description yang diperlukan.' }}
+              ? 'Edit project name or description. The cluster name stays the project ID (UUID v7).'
+              : 'Create a new cluster. Only name and description are required.' }}
           </DialogDescription>
         </DialogHeader>
         <form class="grid gap-3" @submit.prevent="submit">
@@ -163,15 +163,15 @@ async function removeProject(id: string) {
           </div>
           <div class="grid gap-1.5">
             <Label for="p-desc">Description</Label>
-            <Textarea id="p-desc" v-model="description" rows="2" placeholder="Opsional — deskripsi project" />
+            <Textarea id="p-desc" v-model="description" rows="2" placeholder="Optional — project description" />
           </div>
           <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
           <DialogFooter>
             <Button type="submit" :disabled="creating || !name.trim()">
               <Loader2 v-if="creating" class="mr-1 size-4 animate-spin" />
               {{ creating
-                ? (editing ? 'Menyimpan…' : 'Creating cluster…')
-                : (editing ? 'Simpan Perubahan' : 'Create Project') }}
+                ? (editing ? 'Saving…' : 'Creating cluster…')
+                : (editing ? 'Save Changes' : 'Create Project') }}
             </Button>
           </DialogFooter>
         </form>
