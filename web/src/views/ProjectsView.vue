@@ -12,14 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import AppDialog from '@/components/AppDialog.vue'
 import { useProjectsStore } from '@/stores'
 import type { Project } from '@/lib/types'
 import { FolderTree, Plus, Pencil, Loader2, Trash2 } from '@lucide/vue'
@@ -165,37 +158,29 @@ async function confirmDelete() {
       </Card>
     </div>
 
-    <Dialog v-model:open="dialogOpen">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{{ editing ? 'Edit Project' : 'New Project' }}</DialogTitle>
-          <DialogDescription>
-            {{ editing
-              ? 'Edit project name or description. The cluster name stays the project ID (UUID v7).'
-              : 'Create a new cluster. Only name and description are required.' }}
-          </DialogDescription>
-        </DialogHeader>
-        <form class="grid gap-3" @submit.prevent="submit">
-          <div class="grid gap-1.5">
-            <Label for="p-name">Name</Label>
-            <Input id="p-name" v-model="name" placeholder="mis. my-app" required />
-          </div>
-          <div class="grid gap-1.5">
-            <Label for="p-desc">Description</Label>
-            <Textarea id="p-desc" v-model="description" rows="2" placeholder="Optional — project description" />
-          </div>
-          <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
-          <DialogFooter>
-            <Button type="submit" :disabled="creating || !name.trim()">
-              <Loader2 v-if="creating" class="mr-1 size-4 animate-spin" />
-              {{ creating
-                ? (editing ? 'Saving…' : 'Creating cluster…')
-                : (editing ? 'Save Changes' : 'Create Project') }}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <AppDialog v-model:open="dialogOpen" :title="editing ? 'Edit Project' : 'New Project'" :description="editing
+      ? 'Edit project name or description. The cluster name stays the project ID (UUID v7).'
+      : 'Create a new cluster. Only name and description are required.'">
+      <form id="p-form" class="grid gap-3" @submit.prevent="submit">
+        <div class="grid gap-1.5">
+          <Label for="p-name">Name</Label>
+          <Input id="p-name" v-model="name" placeholder="mis. my-app" required />
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="p-desc">Description</Label>
+          <Textarea id="p-desc" v-model="description" rows="2" placeholder="Optional — project description" />
+        </div>
+        <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
+      </form>
+      <template #footer>
+        <Button type="submit" form="p-form" :disabled="creating || !name.trim()">
+          <Loader2 v-if="creating" class="mr-1 size-4 animate-spin" />
+          {{ creating
+            ? (editing ? 'Saving…' : 'Creating cluster…')
+            : (editing ? 'Save Changes' : 'Create Project') }}
+        </Button>
+      </template>
+    </AppDialog>
 
     <ConfirmDeleteDialog
       :open="deleteTarget !== null"

@@ -9,15 +9,7 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import AppDialog from '@/components/AppDialog.vue'
 import { useKeysStore } from '@/stores'
 import { KeyRound, Plus, Copy, Check } from '@lucide/vue'
 
@@ -55,36 +47,30 @@ async function copy(text: string, id: string) {
           SSH key pairs for connecting to remote servers. Private keys are encrypted at rest on BE.
         </p>
       </div>
-      <Dialog v-model:open="show">
-        <DialogTrigger as-child>
+      <AppDialog v-model:open="show" title="Add SSH key" description="Paste your public key. Private key is not stored in the FE.">
+        <template #trigger>
           <Button @click="open">
             <Plus class="mr-1 size-4" />Add key
           </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add SSH key</DialogTitle>
-            <DialogDescription>Paste your public key. Private key is not stored in the FE.</DialogDescription>
-          </DialogHeader>
-          <div class="grid gap-2">
-            <input
-              v-model="name"
-              placeholder="name (e.g. deploy-key-vps2)"
-              class="rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            <textarea
-              v-model="pub"
-              rows="6"
-              placeholder="ssh-ed25519 AAAA..."
-              class="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" @click="show = false">Cancel</Button>
-            <Button @click="submit">Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </template>
+        <div class="grid gap-2">
+          <input
+            v-model="name"
+            placeholder="name (e.g. deploy-key-vps2)"
+            class="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          />
+          <textarea
+            v-model="pub"
+            rows="6"
+            placeholder="ssh-ed25519 AAAA..."
+            class="rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
+          />
+        </div>
+        <template #footer>
+          <Button variant="outline" @click="show = false">Cancel</Button>
+          <Button @click="submit">Save</Button>
+        </template>
+      </AppDialog>
     </div>
 
     <div class="grid gap-3 md:grid-cols-2">

@@ -6,15 +6,7 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import AppDialog from '@/components/AppDialog.vue'
 import { useApiKeysStore } from '@/stores'
 import { Copy, Check, Plus, Trash2 } from '@lucide/vue'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
@@ -69,35 +61,29 @@ async function confirmDelete() {
           <h1 class="text-2xl font-semibold tracking-tight">API Keys</h1>
           <p class="text-sm text-muted-foreground">For CLI and external integrations.</p>
         </div>
-        <Dialog v-model:open="showKey">
-          <DialogTrigger as-child>
+        <AppDialog v-model:open="showKey" title="Create API key" description="Shown once on creation. Store it safely.">
+          <template #trigger>
             <Button>
               <Plus class="mr-1 size-4" />New key
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create API key</DialogTitle>
-              <DialogDescription>Shown once on creation. Store it safely.</DialogDescription>
-            </DialogHeader>
-            <div class="grid gap-2">
-              <input
-                v-model="newKey.name"
-                placeholder="name (e.g. ci-deploy)"
-                class="rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-              <input
-                v-model="newKey.scopes"
-                placeholder="scopes (comma-separated)"
-                class="rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" @click="showKey = false">Cancel</Button>
-              <Button @click="addKey">Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </template>
+          <div class="grid gap-2">
+            <input
+              v-model="newKey.name"
+              placeholder="name (e.g. ci-deploy)"
+              class="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+            <input
+              v-model="newKey.scopes"
+              placeholder="scopes (comma-separated)"
+              class="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <template #footer>
+            <Button variant="outline" @click="showKey = false">Cancel</Button>
+            <Button @click="addKey">Create</Button>
+          </template>
+        </AppDialog>
       </div>
 
       <Card>

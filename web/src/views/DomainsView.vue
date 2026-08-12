@@ -8,14 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import AppDialog from '@/components/AppDialog.vue'
 import { Globe, Plus, Pencil, Trash2, Loader2 } from '@lucide/vue'
 import { domainSchema } from '@/lib/validators'
 import { authed } from '@/lib/api'
@@ -185,40 +178,32 @@ onMounted(load)
       </CardContent>
     </Card>
 
-    <Dialog v-model:open="dialogOpen">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{{ editingId ? 'Edit Domain' : 'Add Domain' }}</DialogTitle>
-          <DialogDescription>
-            Enter a root domain (e.g. example.com). Subdomains (e.g. sub.example.com) are not allowed.
-          </DialogDescription>
-        </DialogHeader>
-        <form class="grid gap-3" @submit.prevent="submit">
-          <div class="grid gap-1.5">
-            <Label for="d-host">Domain Name</Label>
-            <Input
-              id="d-host"
-              v-model="host"
-              placeholder="example.com"
-              :disabled="saving"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
-            <p v-if="!fieldError && preview()" class="text-xs text-muted-foreground">
-              Will be saved as: <span class="font-mono">{{ preview() }}</span>
-            </p>
-            <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
-          </div>
-          <DialogFooter>
-            <Button type="submit" :disabled="saving || !host.trim()">
-              <Loader2 v-if="saving" class="mr-1 size-4 animate-spin" />
-              {{ saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save' }}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <AppDialog v-model:open="dialogOpen" :title="editingId ? 'Edit Domain' : 'Add Domain'" description="Enter a root domain (e.g. example.com). Subdomains (e.g. sub.example.com) are not allowed.">
+      <form id="d-form" class="grid gap-3" @submit.prevent="submit">
+        <div class="grid gap-1.5">
+          <Label for="d-host">Domain Name</Label>
+          <Input
+            id="d-host"
+            v-model="host"
+            placeholder="example.com"
+            :disabled="saving"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p v-if="fieldError" class="text-xs text-destructive">{{ fieldError }}</p>
+          <p v-if="!fieldError && preview()" class="text-xs text-muted-foreground">
+            Will be saved as: <span class="font-mono">{{ preview() }}</span>
+          </p>
+          <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
+        </div>
+      </form>
+      <template #footer>
+        <Button type="submit" form="d-form" :disabled="saving || !host.trim()">
+          <Loader2 v-if="saving" class="mr-1 size-4 animate-spin" />
+          {{ saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save' }}
+        </Button>
+      </template>
+    </AppDialog>
 
     <ConfirmDeleteDialog
       :open="deleteTarget !== null"
