@@ -1,55 +1,77 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getAuth } from '@/lib/api'
 
+// Static imports (NO lazy loading) — all views are bundled up-front.
+import AuthLayout from '@/layouts/AuthLayout.vue'
+import AppLayout from '@/layouts/AppLayout.vue'
+import LoginView from '@/views/LoginView.vue'
+import OnboardingView from '@/views/OnboardingView.vue'
+import DashboardView from '@/views/DashboardView.vue'
+import DomainsView from '@/views/DomainsView.vue'
+import ProjectsView from '@/views/ProjectsView.vue'
+import ProjectDetailView from '@/views/ProjectDetailView.vue'
+import EnvDetailView from '@/views/EnvDetailView.vue'
+import ServiceDetailView from '@/views/ServiceDetailView.vue'
+import ServersView from '@/views/ServersView.vue'
+import ServerDetailView from '@/views/ServerDetailView.vue'
+import SourcesView from '@/views/SourcesView.vue'
+import S3View from '@/views/S3View.vue'
+import SharedVarsView from '@/views/SharedVarsView.vue'
+import KeysView from '@/views/KeysView.vue'
+import ApiKeysView from '@/views/ApiKeysView.vue'
+import TeamsView from '@/views/TeamsView.vue'
+import TeamDetailView from '@/views/TeamDetailView.vue'
+import NotFoundView from '@/views/NotFoundView.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     // ── Auth layout: standalone login (no sidebar, no topbar, no hamburger)
     {
       path: '/login',
-      component: () => import('@/layouts/AuthLayout.vue'),
+      component: AuthLayout,
       children: [
-        { path: '', name: 'login', component: () => import('@/views/LoginView.vue') },
+        { path: '', name: 'login', component: LoginView },
       ],
     },
 
     // ── Onboarding: first-run admin creation (standalone, auth layout)
     {
       path: '/onboarding',
-      component: () => import('@/layouts/AuthLayout.vue'),
+      component: AuthLayout,
       children: [
-        { path: '', name: 'onboarding', component: () => import('@/views/OnboardingView.vue') },
+        { path: '', name: 'onboarding', component: OnboardingView },
       ],
     },
 
     // ── App layout: authenticated dashboard shell (sidebar + topbar)
     {
       path: '/',
-      component: () => import('@/layouts/AppLayout.vue'),
+      component: AppLayout,
       children: [
-        { path: '', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), ...requireAuth() },
+        { path: '', name: 'dashboard', component: DashboardView, ...requireAuth() },
 
         // Domains
-        { path: 'domains', name: 'domains', component: () => import('@/views/DomainsView.vue'), ...requireAuth() },
+        { path: 'domains', name: 'domains', component: DomainsView, ...requireAuth() },
 
         // Projects
-        { path: 'projects', name: 'projects', component: () => import('@/views/ProjectsView.vue'), ...requireAuth() },
-        { path: 'projects/:projectId', name: 'project-detail', component: () => import('@/views/ProjectDetailView.vue'), ...requireAuth() },
-        { path: 'projects/:projectId/:envId', name: 'env-detail', component: () => import('@/views/EnvDetailView.vue'), ...requireAuth() },
-        { path: 'projects/:projectId/:envId/:serviceId', name: 'service-detail', component: () => import('@/views/ServiceDetailView.vue'), ...requireAuth() },
+        { path: 'projects', name: 'projects', component: ProjectsView, ...requireAuth() },
+        { path: 'projects/:projectId', name: 'project-detail', component: ProjectDetailView, ...requireAuth() },
+        { path: 'projects/:projectId/:envId', name: 'env-detail', component: EnvDetailView, ...requireAuth() },
+        { path: 'projects/:projectId/:envId/:serviceId', name: 'service-detail', component: ServiceDetailView, ...requireAuth() },
 
         // Infrastructure
-        { path: 'servers', name: 'servers', component: () => import('@/views/ServersView.vue'), ...requireAuth() },
-        { path: 'servers/:serverId', name: 'server-detail', component: () => import('@/views/ServerDetailView.vue'), ...requireAuth() },
-        { path: 'sources', name: 'sources', component: () => import('@/views/SourcesView.vue'), ...requireAuth() },
-        { path: 's3', name: 's3', component: () => import('@/views/S3View.vue'), ...requireAuth() },
-        { path: 'variables', name: 'variables', component: () => import('@/views/SharedVarsView.vue'), ...requireAuth() },
+        { path: 'servers', name: 'servers', component: ServersView, ...requireAuth() },
+        { path: 'servers/:serverId', name: 'server-detail', component: ServerDetailView, ...requireAuth() },
+        { path: 'sources', name: 'sources', component: SourcesView, ...requireAuth() },
+        { path: 's3', name: 's3', component: S3View, ...requireAuth() },
+        { path: 'variables', name: 'variables', component: SharedVarsView, ...requireAuth() },
 
         // Security
-        { path: 'keys', name: 'keys', component: () => import('@/views/KeysView.vue'), ...requireAuth() },
-        { path: 'api-keys', name: 'api-keys', component: () => import('@/views/ApiKeysView.vue'), ...requireAuth() },
-        { path: 'teams', name: 'teams', component: () => import('@/views/TeamsView.vue'), ...requireAuth() },
-        { path: 'teams/:teamId', name: 'team-detail', component: () => import('@/views/TeamDetailView.vue'), ...requireAuth() },
+        { path: 'keys', name: 'keys', component: KeysView, ...requireAuth() },
+        { path: 'api-keys', name: 'api-keys', component: ApiKeysView, ...requireAuth() },
+        { path: 'teams', name: 'teams', component: TeamsView, ...requireAuth() },
+        { path: 'teams/:teamId', name: 'team-detail', component: TeamDetailView, ...requireAuth() },
       ],
     },
 
@@ -57,10 +79,10 @@ const router = createRouter({
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
-      component: () => import('@/layouts/AppLayout.vue'),
+      component: AppLayout,
       ...requireAuth(),
       children: [
-        { path: '', name: 'not-found-inner', component: () => import('@/views/NotFoundView.vue') },
+        { path: '', name: 'not-found-inner', component: NotFoundView },
       ],
     },
   ],
