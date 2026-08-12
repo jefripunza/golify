@@ -90,30 +90,40 @@ func streamHandler(ctx *fasthttp.RequestCtx) {
 	})
 }
 
-// wsRequestHandler handles /ws/* paths on the unified port.
-// Returns true if the path was handled (WS or /ws/health), false otherwise.
+// wsRequestHandler handles /api/ws/* paths on the backend port.
+// (Legacy /ws/* also accepted for backward compatibility.)
+// Returns true if the path was handled (WS or /api/ws/health), false otherwise.
 func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 	path := string(ctx.Path())
-	if path == "/ws/health" {
+	// new canonical prefix: /api/ws/... (per user rule — WS lives under /api)
+	apiPrefix := "/api/ws"
+	legacyPrefix := "/ws"
+	if !strings.HasPrefix(path, apiPrefix) && !strings.HasPrefix(path, legacyPrefix) {
+		return false
+	}
+	// normalize to the legacy path for the handler switch below
+	rel := strings.TrimPrefix(path, apiPrefix)
+	rel = strings.TrimPrefix(rel, legacyPrefix)
+	switch {
+	case rel == "/health" || rel == "":
 		ctx.SetStatusCode(200)
 		ctx.SetBodyString(`{"app":"golify-ws","status":"ok"}`)
 		return true
-	}
-	if path == "/ws/analytic" {
+	case rel == "/analytic":
 		analyticHandler(ctx)
 		return true
 	}
-	// /ws/terminal/server/:serverId — host terminal for a registered server
-	if serverID, ok := matchWSPath(path, "/ws/terminal/server/"); ok {
+	// /api/ws/terminal/server/:serverId — host terminal for a registered server
+	if serverID, ok := matchWSPath(rel, "/terminal/server/"); ok {
 		terminalHandler(ctx, "server", serverID)
 		return true
 	}
-	// /ws/terminal/container/:containerId — container terminal (podman exec)
-	if containerID, ok := matchWSPath(path, "/ws/terminal/container/"); ok {
+	// /api/ws/terminal/container/:containerId — container terminal (podman exec)
+	if containerID, ok := matchWSPath(rel, "/terminal/container/"); ok {
 		terminalHandler(ctx, "container", containerID)
 		return true
 	}
-	if strings.HasPrefix(path, "/ws/") {
+	if strings.HasPrefix(rel, "/") {
 		streamHandler(ctx)
 		return true
 	}

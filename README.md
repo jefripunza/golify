@@ -28,12 +28,20 @@ Initialized from official [`create-vue`](https://github.com/vuejs/create-vue) �
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 20001 | HTTP | Proxy HTTP + ACME solver (GOTIFY_HTTP) |
-| 20002 | HTTPS | Proxy HTTPS — SPA + API, TLS in-process (GOTIFY_HTTPS) |
-| 20003 | HTTP | Dashboard + API + WebSocket — unified single port, WS served directly by Go (GOTIFY_FE) |
-| 8080  | HTTP+HTTPS | Proxy all-in-one (single port) for Cloudflare tunnel — simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
+| 20000 | HTTP | BE Go: API + WS dashboard (WS prefix `/api/ws/*`) — no SPA (GOTIFY_BE) |
+| 20001 | HTTP | Proxy HTTP + ACME → FE :20003 (GOTIFY_HTTP) |
+| 20002 | HTTPS | Proxy HTTPS → FE :20003 (GOTIFY_HTTPS) |
+| 20003 | HTTP | FE Vue Vite dev server (Vite HMR ws sendiri) — proxy `/api` → :20000 (GOTIFY_FE) |
+| 8080  | HTTP+HTTPS | Proxy all-in-one (HTTP+HTTPS+ACME on ONE port) → FE :20003 — Cloudflare tunnel single-rule ingress, simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
 
-All overridable via `.env` (see `.env.example`) or env vars: `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`, `GOTIFY_DUAL`.
+All overridable via `.env` (see `.env.example`) or env vars: `GOTIFY_BE`, `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`, `GOTIFY_DUAL`.
+
+Request flow:
+
+```
+browser → :20001/:20002/:8080 (proxy Go, domain-gated) → :20003 (Vite FE)
+        → /api → :20000 (BE Go: REST + WS /api/ws/*)
+```
 
 ## Dev mode (hot reload)
 
@@ -99,19 +107,29 @@ curl -X POST http://localhost/api/v1/message \
 docker compose up -d --build
 ```
 
-- Dashboard: <http://localhost:3000>
-- HTTPS: <https://localhost> (needs cert in `data/ssl/custom/<domain>.crt` + `.key` or `data/ssl/letsencrypt/<domain>/fullchain.pem` + `privkey.pem`)
-- ACME: `certbot certonly --webroot -w /app/data/ssl/letsencrypt -d your.domain` (challenge files are served by the BE on port 80 at `/.well-known/acme-challenge/:token`)
+- FE (Vite): <http://localhost:20003> (proxy `/api` → :20000)
+- BE (API + WS): <http://localhost:20000/api/v1/health>, WS <ws://localhost:20000/api/ws/analytic>
+- Proxy HTTP: <http://localhost:20001> (gate) → FE
+- Proxy HTTPS: <https://localhost:20002> (needs cert in `data/ssl/custom/<domain>.crt` + `.key` or `data/ssl/letsencrypt/<domain>/fullchain.pem` + `privkey.pem`) → FE
+- Proxy all-in-one: <http://localhost:8080> (gate) → FE
+- ACME: `certbot certonly --webroot -w /app/data/ssl/letsencrypt -d your.domain` (challenge files served through the :20001 proxy at `/.well-known/acme-challenge/:token`)
 
 ## Local dev (without Docker)
 
 ```bash
-# terminal 1 — FE (Vite proxies /api to the Go backend)
+# terminal 1 — FE (Vite proxies /api to the Go backend, dev server on :20003)
 cd web && npm install --legacy-peer-deps && npm run dev
 
 # terminal 2 — BE on non-privileged ports (no root needed)
-go build -o run . && GOTIFY_HTTP=:20001 GOTIFY_HTTPS=:20003 GOTIFY_FE=:20002 ./run
+go build -o run . && ./run
 ```
+
+- FE (Vite): <http://localhost:20003> (proxy `/api` → :20000)
+- BE (API + WS): <http://localhost:20000/api/v1/health>, WS <ws://localhost:20000/api/ws/analytic>
+- Proxy HTTP: <http://localhost:20001> (gate) → FE
+- Proxy HTTPS: <https://localhost:20002> (needs cert in `data/ssl/custom/<domain>.crt` + `.key` or `data/ssl/letsencrypt/<domain>/fullchain.pem` + `privkey.pem`) → FE
+- Proxy all-in-one: <http://localhost:8080> (gate) → FE
+- ACME: `certbot certonly --webroot -w /app/data/ssl/letsencrypt -d your.domain` (challenge files served through the :20001 proxy at `/.well-known/acme-challenge/:token`)
 
 ## TODO
 

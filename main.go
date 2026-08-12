@@ -10,6 +10,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -23,12 +24,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/valyala/fasthttp"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -49,11 +50,12 @@ import (
 var webDist embed.FS
 
 const (
-	portHTTP   = ":20001" // proxy HTTP + ACME
-	portHTTPS  = ":20002" // proxy HTTPS
-	portFE     = 20003    // Dashboard + API + WS (unified single port)
-	portDual   = ":8080"  // dual-mode (HTTP+HTTPS) — for Cloudflare tunnel single-rule
-	dataDir    = "data"
+	portBE    = ":20000" // BE Go: API + WS dashboard (WS prefix /api/ws/*)
+	portHTTP  = ":20001" // proxy HTTP + ACME → FE :20003
+	portHTTPS = ":20002" // proxy HTTPS → FE :20003
+	portFE    = ":20003" // FE Vue Vite (dev server, HMR ws sendiri)
+	portDual  = ":8080"  // proxy all-in-one (HTTP+HTTPS+ACME) → FE :20003
+	dataDir   = "data"
 )
 
 var (
@@ -133,63 +135,62 @@ func main() {
 	startSystemWorker()
 	log.Println("system analytics worker started (1 Hz)")
 
-	// :80 — HTTP, ACME solver, API
-	httpApp := newHTTPApp()
+	// :20000 — BE Go: API + WS dashboard (WS prefix /api/ws/*). Tidak
+	// serve SPA — FE berdiri sendiri di :20003 (Vite dev server).
+	beApp := newBEApp()
+	bindBE := envOr("GOTIFY_BE", portBE)
+	lnBE, err := net.Listen("tcp", bindBE)
+	if err != nil {
+		log.Fatalf("listen %s: %v", bindBE, err)
+	}
+	go func() {
+		log.Printf("Backend listening on %s (API + WS /api/ws/*)", bindBE)
+		if err := serveUnified(lnBE, beApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("backend server: %v", err)
+		}
+	}()
+
+	// :20001 — proxy HTTP + ACME → FE (:20003)
+	httpProxy := newProxyApp("http-proxy", true)
 	bindHTTP := envOr("GOTIFY_HTTP", portHTTP)
-	ln80, err := net.Listen("tcp", bindHTTP)
+	lnHTTP, err := net.Listen("tcp", bindHTTP)
 	if err != nil {
-		log.Fatalf("listen :80: %v", err)
+		log.Fatalf("listen %s: %v", bindHTTP, err)
 	}
 	go func() {
-		log.Printf("HTTP listening on %s (ACME solver + API)", bindHTTP)
-		if err := httpApp.Listener(ln80); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("http server: %v", err)
+		log.Printf("HTTP proxy listening on %s (gate) → FE %s", bindHTTP, feUpstream())
+		if err := httpProxy.Listener(lnHTTP); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("http proxy: %v", err)
 		}
 	}()
 
-	// :443 — HTTPS, full SPA + API
-	httpsApp := newHTTPSApp()
+	// :20002 — proxy HTTPS → FE (:20003)
+	httpsProxy := newProxyApp("https-proxy", true)
 	bindHTTPS := envOr("GOTIFY_HTTPS", portHTTPS)
-	ln443, err := tls.Listen("tcp", bindHTTPS, buildTLSConfig())
+	lnHTTPS, err := tls.Listen("tcp", bindHTTPS, buildTLSConfig())
 	if err != nil {
-		log.Fatalf("listen :443: %v", err)
+		log.Fatalf("listen %s: %v", bindHTTPS, err)
 	}
 	go func() {
-		log.Printf("HTTPS listening on %s (SPA + API)", bindHTTPS)
-		if err := httpsApp.Listener(ln443); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("https server: %v", err)
+		log.Printf("HTTPS proxy listening on %s (gate) → FE %s", bindHTTPS, feUpstream())
+		if err := httpsProxy.Listener(lnHTTPS); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("https proxy: %v", err)
 		}
 	}()
 
-	// :3000 — dashboard SPA + WebSocket (unified single port)
-	dashApp := rootSPA("dashboard")
-	bindFE := envOr("GOTIFY_FE", ":"+strconv.Itoa(portFE))
-	lnFE, err := net.Listen("tcp", bindFE)
-	if err != nil {
-		log.Fatalf("listen :%d: %v", portFE, err)
-	}
-	go func() {
-		log.Printf("Dashboard listening on %s (SPA + WS)", bindFE)
-		if err := serveUnified(lnFE, dashApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("dashboard server: %v", err)
-		}
-	}()
-
-	// :8080 — dual-mode (HTTP + HTTPS on ONE port) for Cloudflare tunnel.
-	// Cloudflare ingress rules are per-hostname single-rule; a hostname can
-	// only point to one origin port. Serving both protocols on 8080 means
-	// http:// and https:// through the tunnel both reach the SPA/API.
-	dualApp := rootSPA("dual", true)
+	// :8080 — proxy all-in-one (HTTP + HTTPS + ACME on ONE port) → FE (:20003).
+	// Cloudflare ingress rules for simtaru.online / wajadi.online point here.
+	dualProxy := newProxyApp("dual-proxy", true)
 	bindDual := envOr("GOTIFY_DUAL", portDual)
 	lnDual, err := net.Listen("tcp", bindDual)
 	if err != nil {
-		log.Fatalf("listen dual :8080: %v", err)
+		log.Fatalf("listen dual %s: %v", bindDual, err)
 	}
 	go func() {
-		log.Printf("DUAL (HTTP+HTTPS) listening on %s (SPA + API)", bindDual)
+		log.Printf("DUAL proxy listening on %s (gate) → FE %s", bindDual, feUpstream())
 		dual := &dualListener{Listener: lnDual, tlsCfg: buildTLSConfig()}
-		if err := serveUnified(dual, dualApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("dual server: %v", err)
+		if err := serveUnified(dual, dualProxy.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("dual proxy: %v", err)
 		}
 	}()
 
@@ -199,10 +200,92 @@ func main() {
 	log.Println("shutdown signal received")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for _, app := range []*fiber.App{httpApp, httpsApp, dashApp, dualApp} {
+	for _, app := range []*fiber.App{beApp, httpProxy, httpsProxy, dualProxy} {
 		_ = app.ShutdownWithContext(ctx)
 	}
 	log.Println("bye")
+}
+
+// feUpstream returns where every proxy forwards to: the FE (Vue Vite dev
+// server) on GOTIFY_FE (default :20003). Vite in turn proxies /api → BE.
+// A bare ":port" (listen-style) is normalized to 127.0.0.1:port so it can
+// be used as an upstream dial address.
+func feUpstream() string {
+	addr := envOr("GOTIFY_FE", portFE)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return strings.TrimPrefix(addr, ":")
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// newBEApp builds the backend app: API only (no SPA — FE lives separately).
+func newBEApp() *fiber.App {
+	app := newFiber("be")
+	api := app.Group("/api")
+	registerAPI(api)
+	return app
+}
+
+// newProxyApp builds a pure reverse-proxy app. It forwards EVERYTHING to the
+// FE (SPA, assets, WS upgrade paths) on GOTIFY_FE. gate=true runs
+// proxyDomainGate first (only registered domains reach the FE).
+func newProxyApp(label string, gate bool) *fiber.App {
+	app := newFiber(label)
+	if gate {
+		app.Use(proxyDomainGate)
+	}
+	app.Use(forwardToFE)
+	return app
+}
+
+// forwardToFE is the heart of the proxy ports: stream the request to the FE
+// (Vue Vite on GOTIFY_FE) and stream the response back. Works for HTTP,
+// HTTPS (after TLS termination at the edge/listener) and WebSocket upgrades
+// (Vite HMR ws, plus /api/ws which Vite re-proxies to the BE).
+func forwardToFE(c fiber.Ctx) error {
+	// WebSocket upgrades (Vite HMR, /api/ws through Vite) need streaming.
+	if strings.EqualFold(c.Get(fiber.HeaderUpgrade), "websocket") {
+		return forwardWS(c)
+	}
+	// Copy the original path + query; the FE does its own routing (/api → BE).
+	u := "http://" + feUpstream() + c.OriginalURL()
+	req := fasthttp.AcquireRequest()
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(resp)
+	c.Request().CopyTo(req)
+	req.SetRequestURI(u)
+	req.Header.SetHost(c.Hostname())
+	if err := fasthttp.Do(req, resp); err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "FE unreachable: "+err.Error())
+	}
+	c.Status(resp.StatusCode())
+	resp.Header.VisitAll(func(k, v []byte) {
+		if !bytes.EqualFold(k, []byte("Transfer-Encoding")) {
+			c.Response().Header.SetBytesV(string(k), v)
+		}
+	})
+	return c.Send(resp.Body())
+}
+
+// forwardWS tunnels a WebSocket upgrade to the FE over HTTP.
+func forwardWS(c fiber.Ctx) error {
+	u := "http://" + feUpstream() + c.OriginalURL()
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	c.Request().CopyTo(req)
+	req.SetRequestURI(u)
+	req.Header.SetHost(c.Hostname())
+	// fasthttp will perform the upgrade and stream both directions.
+	hc := &fasthttp.HostClient{Addr: feUpstream()}
+	if err := hc.Do(req, c.Response()); err != nil {
+		return fiber.NewError(fiber.StatusBadGateway, "ws FE unreachable: "+err.Error())
+	}
+	return nil
 }
 
 // ----- middleware stack ---------------------------------------------------

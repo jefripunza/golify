@@ -18,7 +18,7 @@ import { useRouter } from 'vue-router'
 
 const servers = useServersStore()
 
-// ── Real host metrics via WebSocket /ws/analytic ─────────────────────────
+// ── Real host metrics via WebSocket /api/ws/analytic ──────────────────────
 // Backend runs a 1 Hz gopsutil worker; this socket connects on mount and
 // closes on unmount (lifetime == time spent on the dashboard page).
 interface SysMem {
@@ -59,7 +59,7 @@ function connectAnalyticWS() {
   const auth = getAuth()
   if (!auth?.token) return
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${location.host}/ws/analytic?token=${encodeURIComponent(auth.token)}`
+  const url = `${proto}//${location.host}/api/ws/analytic?token=${encodeURIComponent(auth.token)}`
 
   wsStatus.value = 'connecting'
   ws = new WebSocket(url)

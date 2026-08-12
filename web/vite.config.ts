@@ -9,9 +9,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   // Load web/.env (VITE_ prefix). Change ports/targets without touching code.
   const env = loadEnv(mode, process.cwd(), '')
-  const devPort = Number(env.VITE_DEV_PORT || 5173)
-  const apiTarget = env.VITE_DEV_PROXY_API || 'http://127.0.0.1:20001'
-  const wsTarget = env.VITE_DEV_PROXY_WS || 'http://127.0.0.1:20002'
+  const devPort = Number(env.VITE_DEV_PORT || 20003)
+  const apiTarget = env.VITE_DEV_PROXY_API || 'http://127.0.0.1:20000'
 
   return {
     plugins: [
@@ -28,13 +27,12 @@ export default defineConfig(({ mode }) => {
       port: devPort,
       strictPort: true,
       host: '0.0.0.0',
-      allowedHosts: ['golify.jefripunza.com'],
+      allowedHosts: ['golify.jefripunza.com', 'simtaru.online', 'wajadi.online', '.simtaru.online', '.wajadi.online'],
       proxy: {
-        // proxy /api to the Go backend in dev
-        '/api': apiTarget,
-        // proxy /ws (xterm WebSocket) to the Go dashboard server (same port as SPA)
-        '/ws': {
-          target: wsTarget,
+        // proxy /api to the Go BE in dev — WS dashboard lives at /api/ws/*
+        // (ws:true so WebSocket upgrades on /api/ws pass through)
+        '/api': {
+          target: apiTarget,
           ws: true,
         },
       },
