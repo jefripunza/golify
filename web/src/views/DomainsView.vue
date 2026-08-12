@@ -19,6 +19,7 @@ import {
 import { Globe, Plus, Pencil, Trash2, Loader2 } from '@lucide/vue'
 import { domainSchema } from '@/lib/validators'
 import { authed } from '@/lib/api'
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 
 interface DomainEntry {
   id: string
@@ -107,6 +108,23 @@ async function remove(id: string) {
   }
 }
 
+// delete confirmation dialog state
+const deleteTarget = ref<DomainEntry | null>(null)
+const deleting = ref(false)
+function requestDelete(d: DomainEntry) {
+  deleteTarget.value = d
+}
+async function confirmDelete() {
+  if (!deleteTarget.value || deleting.value) return
+  deleting.value = true
+  try {
+    await remove(deleteTarget.value.id)
+    deleteTarget.value = null
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -157,7 +175,7 @@ onMounted(load)
                 <Button variant="ghost" size="sm" type="button" @click="openEdit(d)">
                   <Pencil class="size-4" />
                 </Button>
-                <Button variant="ghost" size="sm" type="button" class="text-destructive hover:text-destructive" @click="remove(d.id)">
+                <Button variant="ghost" size="sm" type="button" class="text-destructive hover:text-destructive" @click="requestDelete(d)">
                   <Trash2 class="size-4" />
                 </Button>
               </td>
@@ -201,5 +219,14 @@ onMounted(load)
         </form>
       </DialogContent>
     </Dialog>
+
+    <ConfirmDeleteDialog
+      :open="deleteTarget !== null"
+      :item-name="'domain'"
+      :confirm-text="deleteTarget?.host ?? ''"
+      :loading="deleting"
+      @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

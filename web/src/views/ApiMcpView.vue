@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { useApiMcpStore } from '@/stores'
 import { Plug, Plus, Copy, Check, Power, Trash2 } from '@lucide/vue'
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 
 const store = useApiMcpStore()
 const showKey = ref(false)
@@ -55,6 +56,24 @@ function addMcp() {
 }
 
 const apiKeyOptions = computed(() => store.apiKeys)
+
+// delete confirmation state (shared for API key + MCP endpoint)
+const deleteTarget = ref<{ kind: 'key' | 'mcp'; id: string; name: string } | null>(null)
+const deleting = ref(false)
+function requestDelete(kind: 'key' | 'mcp', id: string, name: string) {
+  deleteTarget.value = { kind, id, name }
+}
+async function confirmDelete() {
+  if (!deleteTarget.value || deleting.value) return
+  deleting.value = true
+  try {
+    if (deleteTarget.value.kind === 'key') store.revokeKey(deleteTarget.value.id)
+    else store.removeMcp(deleteTarget.value.id)
+    deleteTarget.value = null
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -130,7 +149,7 @@ const apiKeyOptions = computed(() => store.apiKeys)
                   {{ k.expiresAt ? k.expiresAt.slice(0, 10) : 'never' }}
                 </td>
                 <td class="px-4 py-2">
-                  <Button variant="ghost" size="sm" @click="store.revokeKey(k.id)">
+                  <Button variant="ghost" size="sm" type="button" @click="requestDelete('key', k.id, k.name)">
                     <Trash2 class="size-3" />
                   </Button>
                 </td>
@@ -198,7 +217,7 @@ const apiKeyOptions = computed(() => store.apiKeys)
               <Button variant="ghost" size="sm" @click="store.toggleMcp(m.id)">
                 <Power class="size-3" />
               </Button>
-              <Button variant="ghost" size="sm" @click="store.removeMcp(m.id)">
+              <Button variant="ghost" size="sm" type="button" @click="requestDelete('mcp', m.id, m.name)">
                 <Trash2 class="size-3" />
               </Button>
             </div>
@@ -206,5 +225,14 @@ const apiKeyOptions = computed(() => store.apiKeys)
         </Card>
       </div>
     </section>
+
+    <ConfirmDeleteDialog
+      :open="deleteTarget !== null"
+      :item-name="deleteTarget?.kind === 'key' ? 'API key' : 'MCP endpoint'"
+      :confirm-text="deleteTarget?.name ?? ''"
+      :loading="deleting"
+      @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

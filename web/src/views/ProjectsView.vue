@@ -23,6 +23,7 @@ import {
 import { useProjectsStore } from '@/stores'
 import type { Project } from '@/lib/types'
 import { FolderTree, Plus, Pencil, Loader2, Trash2 } from '@lucide/vue'
+import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 
 const projects = useProjectsStore()
 
@@ -94,6 +95,24 @@ async function removeProject(id: string) {
     deleting.value = null
   }
 }
+
+// delete confirmation dialog state
+const deleteTarget = ref<Project | null>(null)
+function requestDelete(p: Project) {
+  deleteTarget.value = p
+}
+async function confirmDelete() {
+  if (!deleteTarget.value || deleting.value) return
+  deleting.value = deleteTarget.value.id
+  try {
+    await projects.remove(deleteTarget.value.id)
+    deleteTarget.value = null
+  } catch (e: any) {
+    error.value = e?.message || 'Failed to delete project'
+  } finally {
+    deleting.value = null
+  }
+}
 </script>
 
 <template>
@@ -136,7 +155,7 @@ async function removeProject(id: string) {
               type="button"
               class="text-destructive hover:text-destructive"
               :disabled="deleting === p.id"
-              @click="removeProject(p.id)"
+              @click="requestDelete(p)"
             >
               <Loader2 v-if="deleting === p.id" class="size-3 animate-spin" />
               <Trash2 v-else class="size-3" />
@@ -177,5 +196,14 @@ async function removeProject(id: string) {
         </form>
       </DialogContent>
     </Dialog>
+
+    <ConfirmDeleteDialog
+      :open="deleteTarget !== null"
+      :item-name="'project'"
+      :confirm-text="deleteTarget?.name ?? ''"
+      :loading="deleting !== null"
+      @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

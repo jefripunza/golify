@@ -254,11 +254,22 @@ export const useKeysStore = defineStore('keys', () => {
 export const useApiMcpStore = defineStore('apiMcp', () => {
   const ak = useResourceList<ApiKey>('api/v1/api-keys', mockApiKeys, mapApiKey)
   const mcp = useResourceList<MCPEndpoint>('api/v1/mcp', mockMCP, mapMcp)
+
+  async function revokeKey(id: string) {
+    await authed().delete(`api/v1/api-keys/${id}`).json<any>()
+    await ak.refresh()
+  }
+  async function removeMcp(id: string) {
+    await authed().delete(`api/v1/mcp/${id}`).json<any>()
+    await mcp.refresh()
+  }
+
   return {
     apiKeys: ak.items, mcp: mcp.items,
     pending: computed(() => ak.pending.value || mcp.pending.value),
     error: computed(() => ak.error.value ?? mcp.error.value ?? null),
     refresh: async () => { await Promise.all([ak.refresh(), mcp.refresh()]) },
+    revokeKey, removeMcp,
   }
 })
 
