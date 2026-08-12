@@ -36,3 +36,28 @@ export const onboardSchema = z
 
 export type LoginValues = z.infer<typeof loginSchema>
 export type OnboardValues = z.infer<typeof onboardSchema>
+
+// ── Domain validation ─────────────────────────────────────────────────────
+// Accepts domain or subdomain. Auto-strips http:// / https:// scheme.
+// Rejects paths, ports, query strings, whitespace, and invalid characters.
+export const domainSchema = z
+  .string()
+  .trim()
+  .min(1, 'Domain wajib diisi')
+  .transform((raw) => {
+    // strip scheme if present
+    let d = raw.trim()
+    if (d.includes('://')) d = d.slice(d.indexOf('://') + 3)
+    // strip trailing path/query/fragment
+    d = d.replace(/[/?#].*$/, '')
+    d = d.replace(/\.+$/, '').toLowerCase()
+    return d
+  })
+  .refine((d) => d.length > 0, { message: 'Domain wajib diisi' })
+  .refine((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d), {
+    message: 'Format domain tidak valid (contoh: example.com atau sub.example.com)',
+  })
+  .refine((d) => !d.includes('..'), { message: 'Format domain tidak valid' })
+  .refine((d) => !/^-|-$/.test(d.split('.')[0]), { message: 'Label domain tidak boleh diawali/diakhiri "-"' })
+
+export type DomainValues = z.infer<typeof domainSchema>

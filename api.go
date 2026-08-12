@@ -59,6 +59,9 @@ func registerAPI(r fiber.Router) {
 	// PaaS-style dashboard CRUD (JWT-protected)
 	registerProjects(v1)
 
+	// standalone Domains list (JWT-protected)
+	registerDomains(v1)
+
 	// container count (podman/docker) — JWT-protected, cached
 	v1.Get("/system/containers", requireAuth, containersHandler)
 

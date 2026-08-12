@@ -11,6 +11,7 @@ import {
   Variable,
   Plug,
   Users,
+  Globe,
   ChevronRight,
 } from '@lucide/vue'
 import { useSidebar } from '@/composables/useSidebar'
@@ -27,6 +28,7 @@ interface MenuItem {
 
 const items: MenuItem[] = [
   { label: 'Dashboard', to: '/', icon: LayoutDashboard, group: 'main' },
+  { label: 'Domains', to: '/domains', icon: Globe, group: 'main' },
   { label: 'Projects', to: '/projects', icon: FolderTree, group: 'main' },
   { label: 'Servers', to: '/servers', icon: Server, group: 'infra' },
   { label: 'Sources', to: '/sources', icon: GitBranch, group: 'infra' },

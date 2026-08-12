@@ -29,6 +29,9 @@ const router = createRouter({
       children: [
         { path: '', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), ...requireAuth() },
 
+        // Domains
+        { path: 'domains', name: 'domains', component: () => import('@/views/DomainsView.vue'), ...requireAuth() },
+
         // Projects
         { path: 'projects', name: 'projects', component: () => import('@/views/ProjectsView.vue'), ...requireAuth() },
         { path: 'projects/:projectId', name: 'project-detail', component: () => import('@/views/ProjectDetailView.vue'), ...requireAuth() },
