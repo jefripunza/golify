@@ -171,7 +171,7 @@ func main() {
 	// Cloudflare ingress rules are per-hostname single-rule; a hostname can
 	// only point to one origin port. Serving both protocols on 8080 means
 	// http:// and https:// through the tunnel both reach the SPA/API.
-	dualApp := rootSPA("dual")
+	dualApp := rootSPA("dual", true)
 	bindDual := envOr("GOTIFY_DUAL", portDual)
 	lnDual, err := net.Listen("tcp", bindDual)
 	if err != nil {
@@ -224,6 +224,7 @@ func newFiber(label string) *fiber.App {
 
 func newHTTPApp() *fiber.App {
 	app := newFiber("http")
+	app.Use(proxyDomainGate)
 	app.Get("/.well-known/acme-challenge/:token", acmeChallenge)
 	api := app.Group("/api")
 	registerAPI(api)
@@ -232,14 +233,22 @@ func newHTTPApp() *fiber.App {
 
 func newHTTPSApp() *fiber.App {
 	app := newFiber("https")
+	app.Use(proxyDomainGate)
 	api := app.Group("/api")
 	registerAPI(api)
 	mountSPA(app, "https")
 	return app
 }
 
-func rootSPA(label string) *fiber.App {
+// rootSPA builds an app that serves the SPA + full API + WS. When gated is
+// true (proxy ports), the proxyDomainGate middleware runs BEFORE any route
+// registration so unregistered hostnames get a plain-text notice instead of
+// the login screen.
+func rootSPA(label string, gated ...bool) *fiber.App {
 	app := newFiber(label)
+	if len(gated) > 0 && gated[0] {
+		app.Use(proxyDomainGate)
+	}
 	// The unified dashboard port (GOTIFY_FE) serves the SPA + WS. The tunnel
 	// points golify.jefripunza.com at this port, so it must also serve the
 	// full /api surface (login POST, etc.) — otherwise login returns 404.
