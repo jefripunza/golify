@@ -17,11 +17,49 @@ import { loginSchema } from '@/lib/validators'
 const auth = useAuthStore()
 const router = useRouter()
 
+const REMEMBER_KEY = 'golify.remembered'
+
 const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref('')
 const fieldErrors = ref<{ email?: string; password?: string }>({})
+const remembered = ref(false)
+
+// Prefill dari localStorage kalau pernah login sukses (biar logout tinggal klik Sign in).
+try {
+  const raw = localStorage.getItem(REMEMBER_KEY)
+  if (raw) {
+    const saved = JSON.parse(raw) as { email?: string; password?: string }
+    if (saved.email && saved.password) {
+      email.value = saved.email
+      password.value = saved.password
+      remembered.value = true
+    }
+  }
+} catch {
+  /* ignore corrupt storage */
+}
+
+function saveRemembered(em: string, pw: string) {
+  try {
+    localStorage.setItem(REMEMBER_KEY, JSON.stringify({ email: em, password: pw }))
+    remembered.value = true
+  } catch {
+    /* storage full/blocked — ignore */
+  }
+}
+
+function clearRemembered() {
+  try {
+    localStorage.removeItem(REMEMBER_KEY)
+  } catch {
+    /* ignore */
+  }
+  email.value = ''
+  password.value = ''
+  remembered.value = false
+}
 
 async function submit() {
   error.value = ''
@@ -39,6 +77,7 @@ async function submit() {
   loading.value = true
   try {
     await auth.login(parsed.data.email, parsed.data.password)
+    saveRemembered(parsed.data.email, parsed.data.password)
     router.replace('/')
   } catch (e) {
     error.value = (e as Error).message
@@ -86,6 +125,19 @@ async function submit() {
           <Button type="submit" class="w-full" :disabled="loading">
             {{ loading ? 'Signing in…' : 'Sign in' }}
           </Button>
+          <div v-if="remembered" class="flex items-center justify-between text-xs text-muted-foreground">
+            <span class="inline-flex items-center gap-1">
+              <span class="size-1.5 rounded-full bg-emerald-500" />
+              Saved — click Sign in to log back in
+            </span>
+            <button
+              type="button"
+              class="underline underline-offset-2 hover:text-foreground"
+              @click="clearRemembered"
+            >
+              Clear saved login
+            </button>
+          </div>
         </form>
       </CardContent>
     </Card>
