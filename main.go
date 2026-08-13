@@ -10,7 +10,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -29,7 +28,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/valyala/fasthttp"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -135,22 +133,24 @@ func main() {
 	startSystemWorker()
 	log.Println("system analytics worker started (1 Hz)")
 
-	// :20000 — BE Go: API + WS dashboard (WS prefix /api/ws/*). Tidak
-	// serve SPA — FE berdiri sendiri di :20003 (Vite dev server).
-	beApp := newBEApp()
+	// :20000 — BE Go: SPA (embed) + API + WS dashboard (WS prefix /api/ws/*).
+	// Inilah satu-satunya backend dashboard. Real proxy (20001/20002/8080)
+	// adalah server standalone — TIDAK forward ke sini. FE Vite (20003)
+	// proxy /api ke sini (vite proxy).
+	beApp := rootSPA("be")
 	bindBE := envOr("GOTIFY_BE", portBE)
 	lnBE, err := net.Listen("tcp", bindBE)
 	if err != nil {
 		log.Fatalf("listen %s: %v", bindBE, err)
 	}
 	go func() {
-		log.Printf("Backend listening on %s (API + WS /api/ws/*)", bindBE)
+		log.Printf("Backend listening on %s (SPA + API + WS /api/ws/*)", bindBE)
 		if err := serveUnified(lnBE, beApp.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("backend server: %v", err)
 		}
 	}()
 
-	// :20001 — proxy HTTP + ACME → FE (:20003)
+	// :20001 — real proxy HTTP + ACME (standalone, no API)
 	httpProxy := newProxyApp("http-proxy", true)
 	bindHTTP := envOr("GOTIFY_HTTP", portHTTP)
 	lnHTTP, err := net.Listen("tcp", bindHTTP)
@@ -158,13 +158,13 @@ func main() {
 		log.Fatalf("listen %s: %v", bindHTTP, err)
 	}
 	go func() {
-		log.Printf("HTTP proxy listening on %s (gate) → FE %s", bindHTTP, feUpstream())
+		log.Printf("HTTP real-proxy listening on %s (gate) — standalone SPA+ACME (no API)", bindHTTP)
 		if err := httpProxy.Listener(lnHTTP); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("http proxy: %v", err)
 		}
 	}()
 
-	// :20002 — proxy HTTPS → FE (:20003)
+	// :20002 — real proxy HTTPS (standalone, no API)
 	httpsProxy := newProxyApp("https-proxy", true)
 	bindHTTPS := envOr("GOTIFY_HTTPS", portHTTPS)
 	lnHTTPS, err := tls.Listen("tcp", bindHTTPS, buildTLSConfig())
@@ -172,13 +172,13 @@ func main() {
 		log.Fatalf("listen %s: %v", bindHTTPS, err)
 	}
 	go func() {
-		log.Printf("HTTPS proxy listening on %s (gate) → FE %s", bindHTTPS, feUpstream())
+		log.Printf("HTTPS real-proxy listening on %s (gate) — standalone SPA+ACME+TLS (no API)", bindHTTPS)
 		if err := httpsProxy.Listener(lnHTTPS); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("https proxy: %v", err)
 		}
 	}()
 
-	// :8080 — proxy all-in-one (HTTP + HTTPS + ACME on ONE port) → FE (:20003).
+	// :8080 — real proxy all-in-one (HTTP + HTTPS + ACME on ONE port, standalone, no API).
 	// Cloudflare ingress rules for simtaru.online / wajadi.online point here.
 	dualProxy := newProxyApp("dual-proxy", true)
 	bindDual := envOr("GOTIFY_DUAL", portDual)
@@ -187,7 +187,7 @@ func main() {
 		log.Fatalf("listen dual %s: %v", bindDual, err)
 	}
 	go func() {
-		log.Printf("DUAL proxy listening on %s (gate) → FE %s", bindDual, feUpstream())
+		log.Printf("DUAL real-proxy listening on %s (gate) — standalone SPA+ACME+TLS (no API)", bindDual)
 		dual := &dualListener{Listener: lnDual, tlsCfg: buildTLSConfig()}
 		if err := serveUnified(dual, dualProxy.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("dual proxy: %v", err)
@@ -206,86 +206,25 @@ func main() {
 	log.Println("bye")
 }
 
-// feUpstream returns where every proxy forwards to: the FE (Vue Vite dev
-// server) on GOTIFY_FE (default :20003). Vite in turn proxies /api → BE.
-// A bare ":port" (listen-style) is normalized to 127.0.0.1:port so it can
-// be used as an upstream dial address.
-func feUpstream() string {
-	addr := envOr("GOTIFY_FE", portFE)
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return strings.TrimPrefix(addr, ":")
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
-		host = "127.0.0.1"
-	}
-	return net.JoinHostPort(host, port)
-}
-
-// newBEApp builds the backend app: API only (no SPA — FE lives separately).
-func newBEApp() *fiber.App {
-	app := newFiber("be")
-	api := app.Group("/api")
-	registerAPI(api)
-	return app
-}
-
-// newProxyApp builds a pure reverse-proxy app. It forwards EVERYTHING to the
-// FE (SPA, assets, WS upgrade paths) on GOTIFY_FE. gate=true runs
-// proxyDomainGate first (only registered domains reach the FE).
+// newProxyApp builds a REAL proxy: a standalone server that serves the SPA
+// (static build, embedded) + ACME challenges + TLS + domain gate. It does
+// NOT run the dashboard API (that lives ONLY on the BE :20000) and does NOT
+// forward anywhere — it is its own backend, separate from the dashboard BE.
 func newProxyApp(label string, gate bool) *fiber.App {
 	app := newFiber(label)
 	if gate {
 		app.Use(proxyDomainGate)
 	}
-	app.Use(forwardToFE)
-	return app
-}
-
-// forwardToFE is the heart of the proxy ports: stream the request to the FE
-// (Vue Vite on GOTIFY_FE) and stream the response back. Works for HTTP,
-// HTTPS (after TLS termination at the edge/listener) and WebSocket upgrades
-// (Vite HMR ws, plus /api/ws which Vite re-proxies to the BE).
-func forwardToFE(c fiber.Ctx) error {
-	// WebSocket upgrades (Vite HMR, /api/ws through Vite) need streaming.
-	if strings.EqualFold(c.Get(fiber.HeaderUpgrade), "websocket") {
-		return forwardWS(c)
-	}
-	// Copy the original path + query; the FE does its own routing (/api → BE).
-	u := "http://" + feUpstream() + c.OriginalURL()
-	req := fasthttp.AcquireRequest()
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(resp)
-	c.Request().CopyTo(req)
-	req.SetRequestURI(u)
-	req.Header.SetHost(c.Hostname())
-	if err := fasthttp.Do(req, resp); err != nil {
-		return fiber.NewError(fiber.StatusBadGateway, "FE unreachable: "+err.Error())
-	}
-	c.Status(resp.StatusCode())
-	resp.Header.VisitAll(func(k, v []byte) {
-		if !bytes.EqualFold(k, []byte("Transfer-Encoding")) {
-			c.Response().Header.SetBytesV(string(k), v)
-		}
+	// real ACME: certbot --webroot writes challenge files into
+	// data/ssl/letsencrypt/.acme/<token>; serve them straight from disk.
+	app.Get("/.well-known/acme-challenge/:token", acmeChallenge)
+	// Dashboard API is NOT served on proxy ports (haram) — explicit 404 so
+	// it never falls through to the SPA.
+	app.All("/api/*", func(c fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).SendString("api not served on this proxy port")
 	})
-	return c.Send(resp.Body())
-}
-
-// forwardWS tunnels a WebSocket upgrade to the FE over HTTP.
-func forwardWS(c fiber.Ctx) error {
-	u := "http://" + feUpstream() + c.OriginalURL()
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	c.Request().CopyTo(req)
-	req.SetRequestURI(u)
-	req.Header.SetHost(c.Hostname())
-	// fasthttp will perform the upgrade and stream both directions.
-	hc := &fasthttp.HostClient{Addr: feUpstream()}
-	if err := hc.Do(req, c.Response()); err != nil {
-		return fiber.NewError(fiber.StatusBadGateway, "ws FE unreachable: "+err.Error())
-	}
-	return nil
+	mountSPA(app, label)
+	return app
 }
 
 // ----- middleware stack ---------------------------------------------------
@@ -313,42 +252,6 @@ func newFiber(label string) *fiber.App {
 	return app
 }
 
-func newHTTPApp() *fiber.App {
-	app := newFiber("http")
-	app.Use(proxyDomainGate)
-	app.Get("/.well-known/acme-challenge/:token", acmeChallenge)
-	api := app.Group("/api")
-	registerAPI(api)
-	return app
-}
-
-func newHTTPSApp() *fiber.App {
-	app := newFiber("https")
-	app.Use(proxyDomainGate)
-	api := app.Group("/api")
-	registerAPI(api)
-	mountSPA(app, "https")
-	return app
-}
-
-// rootSPA builds an app that serves the SPA + full API + WS. When gated is
-// true (proxy ports), the proxyDomainGate middleware runs BEFORE any route
-// registration so unregistered hostnames get a plain-text notice instead of
-// the login screen.
-func rootSPA(label string, gated ...bool) *fiber.App {
-	app := newFiber(label)
-	if len(gated) > 0 && gated[0] {
-		app.Use(proxyDomainGate)
-	}
-	// The unified dashboard port (GOTIFY_FE) serves the SPA + WS. The tunnel
-	// points golify.jefripunza.com at this port, so it must also serve the
-	// full /api surface (login POST, etc.) — otherwise login returns 404.
-	api := app.Group("/api")
-	registerAPI(api)
-	mountSPA(app, label)
-	return app
-}
-
 // ----- ACME http-01 solver -------------------------------------------------
 
 func acmeChallenge(c fiber.Ctx) error {
@@ -365,6 +268,17 @@ func acmeChallenge(c fiber.Ctx) error {
 }
 
 // ----- SPA mounting --------------------------------------------------------
+
+// rootSPA builds the BE app: full SPA (embed) + API + WS handler (via
+// serveUnified). It is used ONLY for the BE port :20000. Real proxy ports
+// use newProxyApp (pure forwarder) instead.
+func rootSPA(label string) *fiber.App {
+	app := newFiber(label)
+	api := app.Group("/api")
+	registerAPI(api)
+	mountSPA(app, label)
+	return app
+}
 
 func mountSPA(app *fiber.App, label string) {
 	dist, err := fs.Sub(webDist, "web/dist")
