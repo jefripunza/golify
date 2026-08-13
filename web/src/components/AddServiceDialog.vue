@@ -104,14 +104,14 @@ function submit() {
           <Database class="size-5 text-primary" />
           <div>
             <p class="font-medium">Database</p>
-            <p class="text-xs text-muted-foreground">PostgreSQL, MySQL, Redis, MongoDB and more</p>
+            <p class="text-xs text-muted-foreground">Deploy a database engine — relational or NoSQL</p>
           </div>
         </button>
         <button class="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent" @click="step = 'tool'; selectedType = 'tool'">
           <Wrench class="size-5 text-primary" />
           <div>
             <p class="font-medium">Tool</p>
-            <p class="text-xs text-muted-foreground">Qdrant, Weaviate, Meilisearch, MinIO, n8n…</p>
+            <p class="text-xs text-muted-foreground">Deploy supporting services — search, storage, automation</p>
           </div>
         </button>
       </div>

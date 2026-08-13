@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -152,9 +151,6 @@ function statusColor(s: string) {
                 <Layers class="size-4 text-primary" />
                 {{ env.name }}
               </CardTitle>
-              <div class="flex items-center gap-1">
-                <Badge variant="secondary">{{ env.clusterStatus }}</Badge>
-              </div>
             </div>
             <CardDescription v-if="env.description" class="line-clamp-2">{{ env.description }}</CardDescription>
             <div v-if="env.ipInternal" class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
