@@ -123,7 +123,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("gorm open: %v", err)
 	}
-	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
 	seedIfEmpty(db)

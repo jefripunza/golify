@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watchEffect } from 'vue'
 import type {
   ApiKey,
+  Deployment,
   Environment,
   Key,
   Project,
@@ -162,6 +163,19 @@ function mapProject(p: any): Project {
   }
 }
 
+function mapDeployment(d: any): Deployment {
+  return {
+    id: String(d.id),
+    serviceId: String(d.service_id),
+    status: d.status ?? 'running',
+    commit: d.commit ?? 'HEAD',
+    source: d.source ?? 'manual',
+    startedAt: d.started_at,
+    endedAt: d.ended_at ?? null,
+    createdAt: d.created_at,
+  }
+}
+
 export const useProjectsStore = defineStore('projects', () => {
   const raw = ref<any[]>([])
   const pending = ref(false)
@@ -303,6 +317,21 @@ export const useProjectsStore = defineStore('projects', () => {
     await fetchOnce()
   }
 
+  // ─── Deployments (history + trigger) ───────────────────────────────────
+  async function fetchDeployments(projectId: string, envId: string, serviceId: string): Promise<Deployment[]> {
+    const rows = await authed().get(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/deployments`).json<any[]>()
+    return (rows ?? []).map(mapDeployment)
+  }
+
+  async function createDeployment(projectId: string, envId: string, serviceId: string, input: { commit?: string; source?: string } = {}): Promise<Deployment> {
+    const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/deployments`, { json: input }).json<any>()
+    const dep = mapDeployment(created)
+    // reflect immediately in the store's service status
+    const s = getService(projectId, envId, serviceId)
+    if (s) s.status = 'deploying'
+    return dep
+  }
+
   // ─── Root domains (for the subdomain dropdown) ──────────────────────────
   const rootDomains = ref<string[]>([])
   async function fetchRootDomains() {
@@ -337,7 +366,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, rootDomains, fetchRootDomains, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, fetchDeployments, createDeployment, rootDomains, fetchRootDomains, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

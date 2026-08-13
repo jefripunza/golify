@@ -126,6 +126,24 @@ func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 		terminalHandler(ctx, "container", containerID)
 		return true
 	}
+	// /api/ws/deploy/:deployId — live build log of a deployment
+	if deployID, ok := matchWSPath(rel, "/deploy/"); ok {
+		_ = deployID // deployHandler reads it from the path itself
+		deployHandler(ctx)
+		return true
+	}
+	// /api/ws/log/:serviceId — service runtime logs
+	if serviceID, ok := matchWSPath(rel, "/log/"); ok {
+		_ = serviceID
+		logHandler(ctx)
+		return true
+	}
+	// /api/ws/terminal/:serviceId — container terminal for a service
+	if serviceID, ok := matchWSPath(rel, "/terminal/"); ok {
+		_ = serviceID
+		terminalServiceHandler(ctx)
+		return true
+	}
 	if strings.HasPrefix(rel, "/") {
 		streamHandler(ctx)
 		return true

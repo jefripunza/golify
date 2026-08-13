@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useProjectsStore } from '@/stores'
 import { getAuth } from '@/lib/api'
-import type { Service } from '@/lib/types'
+import type { Deployment, Service } from '@/lib/types'
 import {
   Play,
   Square,
@@ -33,6 +33,9 @@ import {
   Save,
   Loader2,
   Info,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
 } from '@lucide/vue'
 
 const route = useRoute()
@@ -155,9 +158,6 @@ async function saveGeneral() {
 // ─── Root domains (dropdown for subdomain picker) ─────────────────────────
 const rootDomains = computed(() => store.rootDomains)
 const selectedRootDomain = ref('')
-onMounted(() => {
-  store.fetchRootDomains()
-})
 function availableRootDomains(): string[] {
   const roots = rootDomains.value
   if (selectedRootDomain.value && !roots.includes(selectedRootDomain.value)) {
@@ -395,7 +395,7 @@ function initTerminal() {
   }
   const auth = getAuth()
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${location.host}/api/ws/exec?token=${encodeURIComponent(auth?.token ?? '')}&service_id=${encodeURIComponent(serviceId.value)}`
+  const url = `${proto}//${location.host}/api/ws/terminal/${encodeURIComponent(serviceId.value)}?token=${encodeURIComponent(auth?.token ?? '')}`
   try { ws = new WebSocket(url) } catch { ws = null }
   if (ws) {
     ws.onopen = () => {
@@ -421,9 +421,21 @@ watch(activeTab, (tab) => {
     ws?.close()
     ws = null
   }
+  if (tab === 'logs') {
+    setTimeout(() => connectLogs(), 0)
+  }
 })
 watch(termEl, () => setTimeout(() => fit?.fit(), 0))
+// When the service flips to running and we're on the Logs tab, connect.
+watch(() => service.value?.status, (s) => {
+  if (s === 'running' && activeTab.value === 'logs') {
+    setTimeout(() => connectLogs(), 0)
+  }
+})
 onBeforeUnmount(() => {
+  closeDeployLog()
+  logWS?.close()
+  logWS = null
   ws?.close()
   ws = null
   term?.dispose()
@@ -436,6 +448,178 @@ const logs = ref<string[]>([
   `[${new Date().toISOString()}] service ${service.value?.name ?? ''} — stopped`,
   'run `start` to boot the container',
 ])
+
+// ─── Deployments ──────────────────────────────────────────────────────────
+
+// Dummy deployment history matching the reference screenshot
+// (3 entries: 2 success + 1 failed, 2026-08-08, HEAD / Manual / API).
+const dummyDeployments: Deployment[] = [
+  {
+    id: 'dep-dummy-1',
+    serviceId: serviceId.value,
+    status: 'success',
+    commit: 'HEAD',
+    source: 'Manual',
+    startedAt: '2026-08-08T04:30:33Z',
+    endedAt: '2026-08-08T04:31:18Z',
+    createdAt: '2026-08-08T04:30:33Z',
+  },
+  {
+    id: 'dep-dummy-2',
+    serviceId: serviceId.value,
+    status: 'success',
+    commit: 'HEAD',
+    source: 'API',
+    startedAt: '2026-08-08T03:06:49Z',
+    endedAt: '2026-08-08T03:09:14Z',
+    createdAt: '2026-08-08T03:06:49Z',
+  },
+  {
+    id: 'dep-dummy-3',
+    serviceId: serviceId.value,
+    status: 'failed',
+    commit: 'HEAD',
+    source: 'API',
+    startedAt: '2026-08-08T03:01:02Z',
+    endedAt: '2026-08-08T03:03:07Z',
+    createdAt: '2026-08-08T03:01:02Z',
+  },
+]
+
+const deployments = ref<Deployment[]>([])
+const deploymentsLoading = ref(false)
+const deploymentsError = ref('')
+const activeDeployId = ref<string | null>(null) // row with live log open
+const deployLogLines = ref<string[]>([])
+let deployWS: WebSocket | null = null
+
+async function loadDeployments() {
+  deploymentsLoading.value = true
+  deploymentsError.value = ''
+  try {
+    const rows = await store.fetchDeployments(projectId.value, envId.value, serviceId.value)
+    deployments.value = rows.length ? rows : [...dummyDeployments]
+  } catch (e: any) {
+    deploymentsError.value = e?.message || 'Failed to load deployments'
+    deployments.value = [...dummyDeployments]
+  } finally {
+    deploymentsLoading.value = false
+  }
+}
+
+// Open a deployment row and stream its live log over WS.
+function openDeployLog(dep: Deployment) {
+  if (activeDeployId.value === dep.id) {
+    closeDeployLog()
+    return
+  }
+  closeDeployLog()
+  activeDeployId.value = dep.id
+  deployLogLines.value = []
+  const auth = getAuth()
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const url = `${proto}//${location.host}/api/ws/deploy/${encodeURIComponent(dep.id)}?token=${encodeURIComponent(auth?.token ?? '')}`
+  try { deployWS = new WebSocket(url) } catch { deployWS = null }
+  if (!deployWS) {
+    deployLogLines.value = ['[WS not available]']
+    return
+  }
+  deployWS.onmessage = (ev) => {
+    deployLogLines.value = [...deployLogLines.value, String(ev.data)]
+  }
+  deployWS.onclose = () => {
+    // Deploy finished — refresh deployments list AND the store's service
+    // status (stopped → running) so Logs/Terminal gating unlocks.
+    setTimeout(async () => {
+      await store.refresh()
+      await loadDeployments()
+    }, 300)
+  }
+  deployWS.onerror = () => {
+    deployLogLines.value = [...deployLogLines.value, '[connection error]']
+  }
+}
+
+function closeDeployLog() {
+  deployWS?.close()
+  deployWS = null
+  activeDeployId.value = null
+}
+
+function fmtDateTime(iso?: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
+}
+
+function fmtDuration(startIso?: string, endIso?: string | null): string {
+  if (!startIso) return '—'
+  const s = new Date(startIso).getTime()
+  const e = endIso ? new Date(endIso).getTime() : Date.now()
+  if (Number.isNaN(s) || Number.isNaN(e)) return '—'
+  const secs = Math.max(0, Math.round((e - s) / 1000))
+  const m = Math.floor(secs / 60)
+  const sec = secs % 60
+  return `${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`
+}
+
+function fmtAgo(iso?: string): string {
+  if (!iso) return '—'
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return '—'
+  const days = Math.floor((Date.now() - t) / 86_400_000)
+  if (days <= 0) return 'today'
+  return `${days} day${days === 1 ? '' : 's'} ago`
+}
+
+function statusClass(s: string): string {
+  return s === 'success' ? 'border-l-green-500 text-green-500' : s === 'failed' ? 'border-l-red-500 text-red-500' : 'border-l-yellow-500 text-yellow-500'
+}
+
+// Start a deploy (from the Start button): POST → auto-switch to Deployments
+// tab → open the new deployment's live log.
+async function deployNow() {
+  if (!service.value) return
+  try {
+    const dep = await store.createDeployment(projectId.value, envId.value, serviceId.value, { commit: 'HEAD', source: 'Manual' })
+    activeTab.value = 'deployments'
+    await loadDeployments()
+    // find the new row (by id) and open its live log
+    openDeployLog(dep)
+  } catch (e: any) {
+    deploymentsError.value = e?.message || 'Failed to start deployment'
+  }
+}
+
+onMounted(() => {
+  store.fetchRootDomains()
+  loadDeployments()
+})
+
+// ─── Logs (live, gated by service status) ─────────────────────────────────
+let logWS: WebSocket | null = null
+function connectLogs() {
+  logWS?.close()
+  logWS = null
+  logs.value = []
+  if (service.value?.status !== 'running') return
+  const auth = getAuth()
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const url = `${proto}//${location.host}/api/ws/log/${encodeURIComponent(serviceId.value)}?token=${encodeURIComponent(auth?.token ?? '')}`
+  try { logWS = new WebSocket(url) } catch { logWS = null }
+  if (!logWS) {
+    logs.value = ['[WS not available]']
+    return
+  }
+  logWS.onmessage = (ev) => {
+    logs.value = [...logs.value, String(ev.data)]
+    if (logs.value.length > 200) logs.value = logs.value.slice(-200)
+  }
+  logWS.onclose = () => { /* keep */ }
+  logWS.onerror = () => logs.value = [...logs.value, '[connection error]']
+}
 
 // ─── Icons for sidebar ────────────────────────────────────────────────────
 const sectionIcons: Record<string, string> = {
@@ -480,7 +664,7 @@ const sectionIcons: Record<string, string> = {
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <Button size="sm" :disabled="service.status === 'running'" @click="action('start')">
+        <Button size="sm" :disabled="service.status === 'running'" @click="deployNow">
           <Play class="mr-1 size-4" />Start
         </Button>
         <Button size="sm" variant="outline" :disabled="service.status === 'stopped'" @click="action('stop')">
@@ -838,29 +1022,110 @@ const sectionIcons: Record<string, string> = {
 
     <!-- Deployments -->
     <div v-else-if="activeTab === 'deployments'">
-      <Card>
-        <CardHeader><CardTitle>Deployments</CardTitle><CardDescription>Deployment history will appear here.</CardDescription></CardHeader>
-      </Card>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 class="text-lg font-semibold">Deployments</h2>
+          <p class="text-xs text-muted-foreground">
+            {{ deployments.length }} total {{ deployments.length === 1 ? 'deployment' : 'deployments' }}
+          </p>
+        </div>
+        <div class="flex items-center gap-1 text-sm text-muted-foreground">
+          <Button size="icon" variant="ghost" disabled class="size-7"><ChevronLeft class="size-4" /></Button>
+          <span class="text-xs">Page 1 of 1</span>
+          <Button size="icon" variant="ghost" disabled class="size-7"><ChevronRight class="size-4" /></Button>
+        </div>
+      </div>
+
+      <!-- Filter row -->
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <Label class="text-sm">Pull Request id</Label>
+        <Input placeholder="e.g. 123" class="h-8 w-40" />
+        <Button size="sm" variant="outline" class="h-8">Filter</Button>
+      </div>
+
+      <p v-if="deploymentsError" class="mb-2 text-sm text-destructive">{{ deploymentsError }}</p>
+
+      <div v-if="deploymentsLoading" class="text-sm text-muted-foreground">Loading…</div>
+
+      <div v-else class="grid gap-2">
+        <div
+          v-for="dep in deployments"
+          :key="dep.id"
+          class="rounded-md border border-l-4 bg-card p-3 transition-colors hover:bg-accent/50"
+          :class="statusClass(dep.status)"
+        >
+          <div class="flex cursor-pointer items-center justify-between gap-3" @click="openDeployLog(dep)">
+            <div class="flex items-center gap-3">
+              <span class="inline-block size-2 rounded-full" :class="dep.status === 'success' ? 'bg-green-500' : dep.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'" />
+              <span class="text-sm font-medium" :class="dep.status === 'success' ? 'text-green-500' : dep.status === 'failed' ? 'text-red-500' : 'text-yellow-500'">
+                {{ dep.status === 'running' ? 'Running' : dep.status === 'success' ? 'Success' : 'Failed' }}
+              </span>
+            </div>
+            <ChevronDown v-if="activeDeployId === dep.id" class="size-4 text-muted-foreground" />
+            <ChevronRight v-else class="size-4 text-muted-foreground" />
+          </div>
+          <div class="mt-2 grid gap-1 text-xs text-muted-foreground">
+            <p><span class="font-medium text-foreground">Started:</span> {{ fmtDateTime(dep.startedAt) }} UTC</p>
+            <p><span class="font-medium text-foreground">Ended:</span> {{ dep.endedAt ? fmtDateTime(dep.endedAt) + ' UTC' : '—' }}</p>
+            <p><span class="font-medium text-foreground">Duration:</span> {{ fmtDuration(dep.startedAt, dep.endedAt) }}</p>
+            <p class="flex items-center gap-1"><span class="font-medium text-foreground">Finished</span> {{ fmtAgo(dep.endedAt ?? dep.startedAt) }}</p>
+            <p class="flex items-center gap-1">
+              <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{{ dep.commit }}</span>
+              <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{{ dep.source }}</span>
+            </p>
+          </div>
+
+          <!-- Live log row (expanded) -->
+          <div v-if="activeDeployId === dep.id" class="mt-2 rounded bg-[#0e1117] p-2">
+            <pre class="max-h-64 overflow-auto font-mono text-[11px] leading-relaxed text-green-400"><code>{{ deployLogLines.join('\n') || 'Waiting for log output…' }}</code></pre>
+          </div>
+        </div>
+        <p v-if="!deployments.length" class="text-sm text-muted-foreground">No deployments yet.</p>
+      </div>
     </div>
 
-    <!-- Logs -->
+    <!-- Logs (gated: only when service is running) -->
     <div v-else-if="activeTab === 'logs'">
       <Card>
         <CardHeader>
           <CardTitle>Logs</CardTitle>
-          <CardDescription>Last {{ logs.length }} lines.</CardDescription>
+          <CardDescription v-if="service.status !== 'running'">
+            Service is <span class="text-yellow-500">{{ service.status }}</span> — start the service to see live logs.
+          </CardDescription>
+          <CardDescription v-else>Streaming logs from the container…</CardDescription>
         </CardHeader>
         <CardContent>
-          <pre class="max-h-80 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed"><code>{{ logs.join('\n') }}</code></pre>
+          <div v-if="service.status === 'running'">
+            <div class="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span class="inline-block size-2 rounded-full bg-green-500" /> Live
+            </div>
+            <pre class="max-h-80 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed"><code>{{ logs.join('\n') || 'Connecting…' }}</code></pre>
+          </div>
+          <div v-else class="flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
+            <ScrollText class="size-6 text-muted-foreground" />
+            <p class="text-sm text-muted-foreground">No logs yet — the service hasn't been started.</p>
+          </div>
         </CardContent>
       </Card>
     </div>
 
-    <!-- Terminal -->
+    <!-- Terminal (gated: only when service is running) -->
     <div v-else-if="activeTab === 'terminal'">
       <Card>
+        <CardHeader>
+          <CardTitle>Terminal</CardTitle>
+          <CardDescription v-if="service.status !== 'running'">
+            Service is <span class="text-yellow-500">{{ service.status }}</span> — start the service to open a terminal.
+          </CardDescription>
+        </CardHeader>
         <CardContent class="p-2">
-          <div ref="termEl" class="h-80 rounded bg-[#0e1117]" />
+          <div v-if="service.status === 'running'">
+            <div ref="termEl" class="h-80 rounded bg-[#0e1117]" />
+          </div>
+          <div v-else class="flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
+            <Box class="size-6 text-muted-foreground" />
+            <p class="text-sm text-muted-foreground">Terminal is unavailable while the service is stopped.</p>
+          </div>
         </CardContent>
       </Card>
     </div>

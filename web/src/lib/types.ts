@@ -19,6 +19,19 @@ export interface ServiceNetwork {
   containerPort: string
 }
 
+export type DeploymentStatus = 'running' | 'success' | 'failed'
+
+export interface Deployment {
+  id: ID
+  serviceId: ID
+  status: DeploymentStatus
+  commit: string
+  source: string
+  startedAt: string // ISO
+  endedAt?: string | null // ISO
+  createdAt: string // ISO
+}
+
 export interface Service {
   id: ID
   name: string

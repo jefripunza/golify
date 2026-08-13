@@ -683,6 +683,9 @@ func registerProjects(r fiber.Router) {
 		return setServiceStatus(c, "restart")
 	})
 
+	// ─── Deployments (history + trigger) ──────────────────────────────────
+	registerDeployments(auth)
+
 	// fallback: direct /api/v1/services?env=<id> convenience
 	r.Get("/services", requireAuth, func(c fiber.Ctx) error {
 		var rows []Service

@@ -127,6 +127,20 @@ type ServiceNetwork struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// Deployment is a single deploy attempt of a Service. It records when a
+// deploy started, when it finished and whether it succeeded or failed.
+type Deployment struct {
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	Status    string    `gorm:"size:16;not null;default:'running'" json:"status"` // running | success | failed
+	Commit    string    `gorm:"size:64;default:''" json:"commit"`                 // git ref / image tag, e.g. HEAD
+	Source    string    `gorm:"size:32;default:'manual'" json:"source"`           // manual | api | webhook | git
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Domain is a hostname attached to an Environment. It is also the single
 // place where domains are registered (menu "Domains") — the standalone
 // domain_entries table was removed. A domain may be registered without an

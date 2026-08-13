@@ -1,9 +1,11 @@
 package main
 
 import (
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/valyala/fasthttp"
 )
 
 // proxyDomainGate protects the PROXY ports (everything except the dashboard
@@ -43,6 +45,11 @@ func proxyDomainGate(c fiber.Ctx) error {
 	case 0:
 		return plainNotice(c, "service not found !!!")
 	}
+	// Registered + has a service → reverse-proxy to the container if the
+	// service has a mapped port, otherwise serve the SPA.
+	if target := serviceProxyTarget(host); target != "" {
+		return proxyToBackend(c, target)
+	}
 	return c.Next()
 }
 
@@ -74,16 +81,84 @@ func checkDomainRegistration(host string) int {
 		return -1
 	}
 
-	// 2) must have a service attached: the env-scoped Domain whose
-	//    environment has at least one Service. Domains registered without
-	//    an environment (environment_id NULL) are not attached yet.
+	// 2) must have a service attached: either the env-scoped Domain whose
+	//    environment has at least one Service, OR a ServiceDomain row
+	//    (subdomain/domain mapped directly on a service).
 	var svc int64
 	if err := db.Model(&Service{}).
 		Where("environment_id IN (?)",
 			db.Model(&Domain{}).Where("host IN ?", candidates).
 				Where("environment_id IS NOT NULL").Select("environment_id"),
 		).Count(&svc).Error; err != nil || svc == 0 {
-		return 0
+		// fallback: service_domains (host attached straight to a service)
+		if err := db.Model(&Service{}).
+			Joins("JOIN service_domains sd ON sd.service_id = services.id").
+			Where("sd.host IN ?", candidates).
+			Count(&svc).Error; err != nil || svc == 0 {
+			return 0
+		}
 	}
 	return 1
+}
+
+// serviceProxyTarget resolves the container backend for a request hostname.
+// It looks up the service_domains row for the host, takes the service's
+// mapped host port (ports[0] "hostport:80" or its networks), and returns
+// "127.0.0.1:<port>" — empty when the service has no mapped port yet.
+func serviceProxyTarget(host string) string {
+	candidates := []string{host}
+	parts := strings.Split(host, ".")
+	if len(parts) >= 3 {
+		candidates = append(candidates, strings.Join(parts[len(parts)-2:], "."))
+	}
+	log.Printf("[proxy] serviceProxyTarget host=%s candidates=%v", host, candidates)
+	var sd ServiceDomain
+	if err := db.Where("host IN ?", candidates).First(&sd).Error; err != nil {
+		return ""
+	}
+	var svc Service
+	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
+		return ""
+	}
+	// prefer networks host_port (explicit mapping), else ports[0] host part
+	for _, n := range svc.Networks {
+		if n.HostPort != "" {
+			return "127.0.0.1:" + n.HostPort
+		}
+	}
+	if len(svc.Ports) > 0 {
+		hp := strings.Split(svc.Ports[0], ":")[0]
+		if hp != "" {
+			return "127.0.0.1:" + hp
+		}
+	}
+	return ""
+}
+
+// proxyToBackend forwards the request to an upstream (127.0.0.1:<port>)
+// using fasthttp's client and mirrors the response back.
+func proxyToBackend(c fiber.Ctx, target string) error {
+	upstream := "http://" + target
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	c.Request().CopyTo(req)
+	uri := c.Request().URI()
+	req.SetRequestURI(upstream + string(uri.RequestURI()))
+	req.Header.Del("Host")
+	req.Header.SetHost(target)
+
+	client := &fasthttp.HostClient{Addr: target}
+	if err := client.Do(req, resp); err != nil {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())
+	}
+
+	c.Response().SetStatusCode(resp.StatusCode())
+	c.Response().SetBody(resp.Body())
+	resp.Header.VisitAll(func(k, v []byte) {
+		c.Response().Header.SetBytesKV(k, v)
+	})
+	return nil
 }
