@@ -44,7 +44,7 @@ func registerDeployments(auth fiber.Router) {
 		}
 		// container name convention from deployments.go: golify-<name>
 		base := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
-		out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}	{{.Status}}	{{.Ports}}").CombinedOutput()
+		out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}	{{.ID}}	{{.Status}}	{{.Ports}}").CombinedOutput()
 		if err != nil {
 			// podman not available → empty list
 			return c.JSON([]fiber.Map{})
@@ -54,23 +54,32 @@ func registerDeployments(auth fiber.Router) {
 			if line == "" {
 				continue
 			}
-			parts := strings.SplitN(line, "	", 3)
+			parts := strings.SplitN(line, "	", 4)
 			name := parts[0]
+			cid := ""
 			status := ""
 			ports := ""
 			if len(parts) > 1 {
-				status = parts[1]
+				cid = parts[1]
 			}
 			if len(parts) > 2 {
-				ports = parts[2]
+				status = parts[2]
+			}
+			if len(parts) > 3 {
+				ports = parts[3]
+			}
+			// short 12-char replica id (unique per container/replica)
+			if len(cid) > 12 {
+				cid = cid[:12]
 			}
 			running := strings.Contains(status, "Up")
 			rows = append(rows, fiber.Map{
-				"id":      name,
-				"name":    name,
-				"status":  status,
-				"running": running,
-				"ports":   ports,
+				"id":           name,
+				"name":         name,
+				"replica_id":   cid,
+				"status":       status,
+				"running":      running,
+				"ports":        ports,
 			})
 		}
 		return c.JSON(rows)

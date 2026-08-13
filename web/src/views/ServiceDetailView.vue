@@ -464,6 +464,7 @@ onBeforeUnmount(() => {
 interface LogContainer {
   id: string
   name: string
+  replicaId: string   // short container id — displayed as the replica id
   status: string
   running: boolean
   ports: string
@@ -499,7 +500,8 @@ async function loadContainers() {
       return {
         id: r.id,
         name: r.name,
-        status: r.status,
+        replicaId: r.replica_id || '',
+        status: r.status || '',
         running: r.running,
         ports: r.ports,
         expanded: prev?.expanded ?? false,
@@ -1254,7 +1256,7 @@ const sectionIcons: Record<string, string> = {
             <span class="flex min-w-0 items-center gap-2">
               <ChevronDown class="size-4 shrink-0 text-muted-foreground transition-transform" :class="c.expanded ? '' : '-rotate-90'" />
               <span class="inline-block size-2 shrink-0 rounded-full" :class="c.running ? 'bg-green-500' : 'bg-yellow-500'" />
-              <span class="truncate font-mono text-sm">{{ c.name }}</span>
+              <span class="truncate font-mono text-sm">{{ c.replicaId || c.name }}</span>
             </span>
             <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
               <span v-if="c.ports" class="hidden sm:inline">{{ c.ports }}</span>
