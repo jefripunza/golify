@@ -27,6 +27,7 @@ export interface Deployment {
   status: DeploymentStatus
   commit: string
   source: string
+  log?: string // persisted build output (Coolify-style log lines)
   startedAt: string // ISO
   endedAt?: string | null // ISO
   createdAt: string // ISO

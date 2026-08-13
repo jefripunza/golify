@@ -135,6 +135,7 @@ type Deployment struct {
 	Status    string    `gorm:"size:16;not null;default:'running'" json:"status"` // running | success | failed
 	Commit    string    `gorm:"size:64;default:''" json:"commit"`                 // git ref / image tag, e.g. HEAD
 	Source    string    `gorm:"size:32;default:'manual'" json:"source"`           // manual | api | webhook | git
+	Log       string    `gorm:"type:text" json:"log"`                             // persisted build output (written when deploy finishes)
 	StartedAt time.Time `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at"`
 	CreatedAt time.Time `json:"created_at"`

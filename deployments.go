@@ -43,6 +43,22 @@ func registerDeployments(auth fiber.Router) {
 		return c.JSON(rows)
 	})
 
+	// GET single deployment detail (incl. persisted log). The log is served
+	// from the DB (written during deploy); falls back to the in-memory buffer.
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/deployments/:deployId", func(c fiber.Ctx) error {
+		did := c.Params("deployId")
+		var dep Deployment
+		if err := db.First(&dep, "id = ?", did).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "deployment not found"})
+		}
+		if dep.Log == "" {
+			if buf := readDeployLogs(did); len(buf) > 0 {
+				dep.Log = strings.Join(buf, "\n")
+			}
+		}
+		return c.JSON(dep)
+	})
+
 	// POST trigger a deploy
 	auth.Post("/:projectId/environments/:envId/services/:serviceId/deployments", func(c fiber.Ctx) error {
 		sid := c.Params("serviceId")
@@ -166,10 +182,23 @@ var deployLogs = struct {
 	buf map[string][]string
 }{buf: map[string][]string{}}
 
+// logTimestamp renders the Coolify-style prefix: 2026-Aug-08 04:30:37.649726
+func logTimestamp(t time.Time) string {
+	return t.Format("2006-Jan-02 15:04:05.000000")
+}
+
 func appendDeployLog(deployID, line string) {
+	ts := logTimestamp(time.Now())
+	// only prefix with a timestamp if the line doesn't already carry one
+	if !strings.HasPrefix(line, "20") {
+		line = ts + " " + line
+	}
 	deployLogs.Lock()
 	defer deployLogs.Unlock()
 	deployLogs.buf[deployID] = append(deployLogs.buf[deployID], line)
+	// persist as we go so a crash/restart doesn't lose the log
+	rows := deployLogs.buf[deployID]
+	db.Model(&Deployment{}).Where("id = ?", deployID).Update("log", strings.Join(rows, "\n"))
 }
 
 func readDeployLogs(deployID string) []string {

@@ -170,6 +170,7 @@ function mapDeployment(d: any): Deployment {
     status: d.status ?? 'running',
     commit: d.commit ?? 'HEAD',
     source: d.source ?? 'manual',
+    log: d.log ?? '',
     startedAt: d.started_at,
     endedAt: d.ended_at ?? null,
     createdAt: d.created_at,
@@ -323,6 +324,11 @@ export const useProjectsStore = defineStore('projects', () => {
     return (rows ?? []).map(mapDeployment)
   }
 
+  async function fetchDeployment(projectId: string, envId: string, serviceId: string, deployId: string): Promise<Deployment> {
+    const row = await authed().get(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/deployments/${deployId}`).json<any>()
+    return mapDeployment(row)
+  }
+
   async function createDeployment(projectId: string, envId: string, serviceId: string, input: { commit?: string; source?: string } = {}): Promise<Deployment> {
     const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/deployments`, { json: input }).json<any>()
     const dep = mapDeployment(created)
@@ -366,7 +372,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, fetchDeployments, createDeployment, rootDomains, fetchRootDomains, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, fetchDeployments, fetchDeployment, createDeployment, rootDomains, fetchRootDomains, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────
