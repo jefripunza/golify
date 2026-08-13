@@ -277,6 +277,44 @@ function sanitizeReplicas(v: unknown): number {
   return Math.max(1, parseInt(s.replace(/^0+/, '') || '1', 10))
 }
 
+// Hard guard: block invalid keys (-, e, E, ., ,, +) before they ever
+// reach the input. Works on desktop + mobile hardware keyboards.
+function blockReplicaKeys(e: KeyboardEvent) {
+  if (e.key.length === 1 && !/[0-9]/.test(e.key)) {
+    e.preventDefault()
+  }
+}
+
+// Sync the DOM value immediately after sanitizing so the displayed text
+// can never show a rejected character (fixes the "-1" visible bug).
+function onReplicasInput(e: Event, target: 'replicas' | 'replicasMin' | 'replicasMax') {
+  const el = e.target as HTMLInputElement
+  const clean = sanitizeReplicas(el.value)
+  form[target] = clean
+  // Force the DOM to reflect the sanitized value right away — Vue's
+  // :value binding won't re-render when the value didn't change.
+  el.value = String(clean)
+}
+
+// Block paste of non-digit content (e.g. "-1", "3e4" from clipboard).
+function blockReplicaPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text') ?? ''
+  if (!/[0-9]/.test(text)) {
+    e.preventDefault()
+    return
+  }
+  // Allow the paste but strip non-digits — the @input handler cleans up.
+  const clean = sanitizeReplicas(text)
+  if (clean !== Number(text)) {
+    e.preventDefault()
+    const el = e.target as HTMLInputElement
+    const start = el.selectionStart ?? el.value.length
+    const end = el.selectionEnd ?? el.value.length
+    el.value = el.value.slice(0, start) + String(clean) + el.value.slice(end)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+}
+
 // ─── Status + actions ─────────────────────────────────────────────────────
 function statusVariant(s?: string) {
   switch (s) {
@@ -671,9 +709,12 @@ const sectionIcons: Record<string, string> = {
                       type="text"
                       inputmode="numeric"
                       pattern="[0-9]*"
+                      autocomplete="off"
                       class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                       @wheel.prevent="preventNumberScroll"
-                      @input="form.replicas = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                      @keydown="blockReplicaKeys"
+                      @paste="blockReplicaPaste"
+                      @input="onReplicasInput($event, 'replicas')"
                     />
                   </div>
                 </template>
@@ -686,9 +727,12 @@ const sectionIcons: Record<string, string> = {
                         type="text"
                         inputmode="numeric"
                         pattern="[0-9]*"
+                        autocomplete="off"
                         class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                         @wheel.prevent="preventNumberScroll"
-                        @input="form.replicasMin = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                        @keydown="blockReplicaKeys"
+                        @paste="blockReplicaPaste"
+                        @input="onReplicasInput($event, 'replicasMin')"
                       />
                     </div>
                     <div class="grid gap-1.5">
@@ -698,9 +742,12 @@ const sectionIcons: Record<string, string> = {
                         type="text"
                         inputmode="numeric"
                         pattern="[0-9]*"
+                        autocomplete="off"
                         class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                         @wheel.prevent="preventNumberScroll"
-                        @input="form.replicasMax = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                        @keydown="blockReplicaKeys"
+                        @paste="blockReplicaPaste"
+                        @input="onReplicasInput($event, 'replicasMax')"
                       />
                     </div>
                   </div>
