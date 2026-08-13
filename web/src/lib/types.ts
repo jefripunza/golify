@@ -7,6 +7,12 @@ export type ServiceKind = 'container' | 'compose'
 export type ServiceType = 'application' | 'database' | 'tool'
 export type ServiceStatus = 'running' | 'stopped' | 'building' | 'error' | 'deploying'
 
+export interface ServiceDomain {
+  id: ID
+  host: string
+  port: string
+}
+
 export interface Service {
   id: ID
   name: string
@@ -14,11 +20,22 @@ export interface Service {
   type: ServiceType
   catalog?: string // e.g. docker-image | version-control | postgres | qdrant
   image?: string
+  imageTag?: string // docker image tag or hash
   composePath?: string
+  description?: string
+  // Coolify-style configuration
+  dockerOptions?: string
+  portsExposes?: string
+  portMappings?: string[]
+  networkAliases?: string[]
+  basicAuthEnable?: boolean
+  basicAuthUser?: string
+  basicAuthPass?: string
   status: ServiceStatus
   cpu: number // %
   memory: number // MB
   ports: string[]
+  domains?: ServiceDomain[]
   updatedAt: string // ISO
 }
 

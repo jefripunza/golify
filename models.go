@@ -15,6 +15,7 @@ func (m *User) BeforeCreate(tx *gorm.DB) error           { return fillID(&m.ID) 
 func (m *Project) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *Environment) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) }
 func (m *Service) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *ServiceDomain) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
 func (m *Domain) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Server) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Source) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
@@ -72,20 +73,41 @@ type Environment struct {
 
 // Service is a container or compose app inside an Environment.
 type Service struct {
-	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
-	EnvironmentID UUID      `gorm:"not null;index;size:36" json:"environment_id"`
-	Name          string    `gorm:"size:255;not null" json:"name"`
-	Kind          string    `gorm:"size:32;not null;default:'container'" json:"kind"`   // container | compose
-	Type          string    `gorm:"size:32;not null;default:'application'" json:"type"` // application | database | tool
-	Catalog       string    `gorm:"size:64;default:''" json:"catalog"`                  // e.g. docker-image | version-control | postgres | qdrant
-	Image         string    `gorm:"size:512;default:''" json:"image"`
-	ComposePath   string    `gorm:"size:512;default:''" json:"compose_path"`
-	Status        string    `gorm:"size:32;not null;default:'stopped'" json:"status"`
-	CPU           float64   `gorm:"default:0" json:"cpu"`
-	Memory        int64     `gorm:"default:0" json:"memory"` // MB
-	Ports         []string  `gorm:"serializer:json" json:"ports"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            UUID   `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID UUID   `gorm:"not null;index;size:36" json:"environment_id"`
+	Name          string `gorm:"size:255;not null" json:"name"`
+	Kind          string `gorm:"size:32;not null;default:'container'" json:"kind"`   // container | compose
+	Type          string `gorm:"size:32;not null;default:'application'" json:"type"` // application | database | tool
+	Catalog       string `gorm:"size:64;default:''" json:"catalog"`                  // e.g. docker-image | version-control | postgres | qdrant
+	Image         string `gorm:"size:512;default:''" json:"image"`
+	ImageTag      string `gorm:"size:128;default:'latest'" json:"image_tag"` // docker image tag or hash
+	ComposePath   string `gorm:"size:512;default:''" json:"compose_path"`
+	Description   string `gorm:"size:512;default:''" json:"description"`
+	// Coolify-style configuration
+	DockerOptions   string          `gorm:"size:512;default:''" json:"docker_options"` // custom docker options e.g. --privileged
+	PortsExposes    string          `gorm:"size:255;default:''" json:"ports_exposes"`  // e.g. 8080
+	PortMappings    []string        `gorm:"serializer:json" json:"port_mappings"`      // e.g. ["3000:3000"]
+	NetworkAliases  []string        `gorm:"serializer:json" json:"network_aliases"`
+	BasicAuthEnable bool            `gorm:"default:false" json:"basic_auth_enable"`
+	BasicAuthUser   string          `gorm:"size:255;default:''" json:"basic_auth_user"`
+	BasicAuthPass   string          `gorm:"size:255;default:''" json:"basic_auth_pass"`
+	Status          string          `gorm:"size:32;not null;default:'stopped'" json:"status"`
+	CPU             float64         `gorm:"default:0" json:"cpu"`
+	Memory          int64           `gorm:"default:0" json:"memory"` // MB
+	Ports           []string        `gorm:"serializer:json" json:"ports"`
+	Domains         []ServiceDomain `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+// ServiceDomain is a domain/subdomain attached to a single Service,
+// mapped to a specific port of that service (Coolify-style).
+type ServiceDomain struct {
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	Host      string    `gorm:"size:255;not null" json:"host"`    // e.g. app.example.com
+	Port      string    `gorm:"size:16;default:'80'" json:"port"` // target port on the service
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Domain is a hostname attached to an Environment. It is also the single

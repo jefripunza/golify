@@ -26,7 +26,7 @@ func registerProjects(r fiber.Router) {
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs.Services").Preload("Envs.Domains").
+		if err := db.Preload("Envs.Services.Domains").Preload("Envs.Domains").
 			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -41,10 +41,26 @@ func registerProjects(r fiber.Router) {
 					svcs = append(svcs, fiber.Map{
 						"id": s.ID, "name": s.Name, "kind": s.Kind,
 						"type": s.Type, "catalog": s.Catalog,
-						"image": s.Image, "compose_path": s.ComposePath,
-						"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
+						"image": s.Image, "image_tag": s.ImageTag,
+						"compose_path":      s.ComposePath,
+						"description":       s.Description,
+						"docker_options":    s.DockerOptions,
+						"ports_exposes":     s.PortsExposes,
+						"port_mappings":     s.PortMappings,
+						"network_aliases":   s.NetworkAliases,
+						"basic_auth_enable": s.BasicAuthEnable,
+						"basic_auth_user":   s.BasicAuthUser,
+						"basic_auth_pass":   s.BasicAuthPass,
+						"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 						"ports": s.Ports, "created_at": s.CreatedAt,
 						"updated_at": s.UpdatedAt,
+						"domains": func() []fiber.Map {
+							ds := make([]fiber.Map, 0, len(s.Domains))
+							for _, d := range s.Domains {
+								ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
+							}
+							return ds
+						}(),
 					})
 				}
 				domains := make([]fiber.Map, 0, len(e.Domains))
@@ -117,7 +133,7 @@ func registerProjects(r fiber.Router) {
 
 	auth.Get("/:id", func(c fiber.Ctx) error {
 		var p Project
-		err := db.Preload("Envs.Services").Preload("Envs.Domains").
+		err := db.Preload("Envs.Services.Domains").Preload("Envs.Domains").
 			First(&p, "id = ?", c.Params("id")).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
@@ -132,9 +148,25 @@ func registerProjects(r fiber.Router) {
 				svcs = append(svcs, fiber.Map{
 					"id": s.ID, "name": s.Name, "kind": s.Kind,
 					"type": s.Type, "catalog": s.Catalog,
-					"image": s.Image, "compose_path": s.ComposePath,
-					"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
+					"image": s.Image, "image_tag": s.ImageTag,
+					"compose_path":      s.ComposePath,
+					"description":       s.Description,
+					"docker_options":    s.DockerOptions,
+					"ports_exposes":     s.PortsExposes,
+					"port_mappings":     s.PortMappings,
+					"network_aliases":   s.NetworkAliases,
+					"basic_auth_enable": s.BasicAuthEnable,
+					"basic_auth_user":   s.BasicAuthUser,
+					"basic_auth_pass":   s.BasicAuthPass,
+					"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
+					"domains": func() []fiber.Map {
+						ds := make([]fiber.Map, 0, len(s.Domains))
+						for _, d := range s.Domains {
+							ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
+						}
+						return ds
+					}(),
 				})
 			}
 			domains := make([]fiber.Map, 0, len(e.Domains))
@@ -362,6 +394,110 @@ func registerProjects(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": sid})
+	})
+
+	// PATCH service configuration (Coolify-style General settings).
+	auth.Patch("/:projectId/environments/:envId/services/:serviceId", func(c fiber.Ctx) error {
+		sid := c.Params("serviceId")
+		var svc Service
+		if err := db.First(&svc, "id = ?", sid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "service not found"})
+		}
+		var body struct {
+			Name            *string   `json:"name"`
+			Description     *string   `json:"description"`
+			Image           *string   `json:"image"`
+			ImageTag        *string   `json:"image_tag"`
+			DockerOptions   *string   `json:"docker_options"`
+			PortsExposes    *string   `json:"ports_exposes"`
+			PortMappings    *[]string `json:"port_mappings"`
+			NetworkAliases  *[]string `json:"network_aliases"`
+			BasicAuthEnable *bool     `json:"basic_auth_enable"`
+			BasicAuthUser   *string   `json:"basic_auth_user"`
+			BasicAuthPass   *string   `json:"basic_auth_pass"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
+		}
+		if body.Name != nil {
+			if *body.Name == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+			}
+			svc.Name = *body.Name
+		}
+		if body.Description != nil {
+			svc.Description = *body.Description
+		}
+		if body.Image != nil {
+			svc.Image = *body.Image
+		}
+		if body.ImageTag != nil {
+			svc.ImageTag = *body.ImageTag
+		}
+		if body.DockerOptions != nil {
+			svc.DockerOptions = *body.DockerOptions
+		}
+		if body.PortsExposes != nil {
+			svc.PortsExposes = *body.PortsExposes
+		}
+		if body.PortMappings != nil {
+			svc.PortMappings = *body.PortMappings
+		}
+		if body.NetworkAliases != nil {
+			svc.NetworkAliases = *body.NetworkAliases
+		}
+		if body.BasicAuthEnable != nil {
+			svc.BasicAuthEnable = *body.BasicAuthEnable
+		}
+		if body.BasicAuthUser != nil {
+			svc.BasicAuthUser = *body.BasicAuthUser
+		}
+		if body.BasicAuthPass != nil {
+			svc.BasicAuthPass = *body.BasicAuthPass
+		}
+		if err := db.Save(&svc).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(svc)
+	})
+
+	// ─── Service domains (many domains/subdomains per service, each → port) ──
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/domains", func(c fiber.Ctx) error {
+		var rows []ServiceDomain
+		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("host asc").Find(&rows).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(rows)
+	})
+
+	auth.Post("/:projectId/environments/:envId/services/:serviceId/domains", func(c fiber.Ctx) error {
+		var body struct {
+			Host string `json:"host"`
+			Port string `json:"port"`
+		}
+		if err := c.Bind().JSON(&body); err != nil || body.Host == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "host required"})
+		}
+		if body.Port == "" {
+			body.Port = "80"
+		}
+		sd := ServiceDomain{
+			ServiceID: c.Params("serviceId"),
+			Host:      body.Host,
+			Port:      body.Port,
+		}
+		if err := db.Create(&sd).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(sd)
+	})
+
+	auth.Delete("/:projectId/environments/:envId/services/:serviceId/domains/:domainId", func(c fiber.Ctx) error {
+		did := c.Params("domainId")
+		if err := db.Delete(&ServiceDomain{}, "id = ?", did).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": did})
 	})
 
 	// ─── Start / Stop / Restart a service (status switch) ─────────────────

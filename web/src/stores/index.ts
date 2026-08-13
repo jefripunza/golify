@@ -127,11 +127,21 @@ function mapSvc(s: any): Service {
     type: s.type === 'database' || s.type === 'tool' ? s.type : 'application',
     catalog: s.catalog || undefined,
     image: s.image || undefined,
+    imageTag: s.image_tag || undefined,
     composePath: s.compose_path || undefined,
+    description: s.description || undefined,
+    dockerOptions: s.docker_options || undefined,
+    portsExposes: s.ports_exposes || undefined,
+    portMappings: s.port_mappings ?? [],
+    networkAliases: s.network_aliases ?? [],
+    basicAuthEnable: s.basic_auth_enable ?? false,
+    basicAuthUser: s.basic_auth_user || undefined,
+    basicAuthPass: s.basic_auth_pass || undefined,
     status: s.status ?? 'stopped',
     cpu: s.cpu,
     memory: s.memory,
     ports: s.ports ?? [],
+    domains: (s.domains ?? []).map((d: any) => ({ id: String(d.id), host: d.host, port: d.port })),
     updatedAt: s.updated_at,
   }
 }
@@ -235,6 +245,30 @@ export const useProjectsStore = defineStore('projects', () => {
     if (e) e.services = e.services.filter((s: any) => s.id !== serviceId)
   }
 
+  async function updateService(projectId: string, envId: string, serviceId: string, patch: Record<string, unknown>) {
+    const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}`, {
+      json: patch,
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) Object.assign(s, updated)
+    return updated
+  }
+
+  async function addServiceDomain(projectId: string, envId: string, serviceId: string, host: string, port: string) {
+    const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains`, {
+      json: { host, port },
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) s.domains = [...(s.domains ?? []), { id: String(created.id), host: created.host, port: created.port }]
+    return created
+  }
+
+  async function removeServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string) {
+    await authed().delete(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains/${domainId}`).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) s.domains = (s.domains ?? []).filter((d) => d.id !== domainId)
+  }
+
   async function update(id: string, name: string, description: string) {
     const updated = await authed().patch(`api/v1/projects/${id}`, { json: { name, description } }).json<any>()
     const i = raw.value.findIndex((p) => p.id === id)
@@ -258,7 +292,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, removeServiceDomain, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────
