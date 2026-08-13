@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AppWindow, Database, Wrench, ArrowLeft, Box, GitBranch, Loader2 } from '@lucide/vue'
+import { AppWindow, Database, Wrench, Box, GitBranch, Loader2 } from '@lucide/vue'
 
 const props = defineProps<{ open: boolean; loading?: boolean }>()
 const emit = defineEmits<{
@@ -42,13 +42,13 @@ type Step = 'root' | 'application-sub' | 'database' | 'tool' | 'app-docker' | 'a
 const step = ref<Step>('root')
 const selectedType = ref<'application' | 'database' | 'tool' | null>(null)
 const selectedCatalog = ref<{ id: string; name: string; image: string; port: string } | null>(null)
-const form = ref({ name: '', image: '', repo: '', ports: '' })
+const form = ref({ name: '', image: '', repo: '' })
 
 function reset() {
   step.value = 'root'
   selectedType.value = null
   selectedCatalog.value = null
-  form.value = { name: '', image: '', repo: '', ports: '' }
+  form.value = { name: '', image: '', repo: '' }
 }
 
 // Reset to the root picker every time the dialog opens, so a previous
@@ -56,12 +56,6 @@ function reset() {
 watch(() => props.open, (open) => {
   if (open) reset()
 })
-
-function back() {
-  if (step.value === 'app-docker' || step.value === 'app-vcs') step.value = 'application-sub'
-  else if (step.value === 'application-sub' || step.value === 'database' || step.value === 'tool') step.value = 'root'
-  else emit('update:open', false)
-}
 
 const canSubmit = computed(() => {
   if (step.value === 'app-docker') return form.value.name && form.value.image
@@ -71,7 +65,7 @@ const canSubmit = computed(() => {
 
 function submit() {
   if (step.value === 'app-docker') {
-    emit('create', { name: form.value.name, type: 'application', catalog: 'docker-image', image: form.value.image, ...(form.value.ports ? { ports: form.value.ports.split(',').map((p) => p.trim()) } : {}) })
+    emit('create', { name: form.value.name, type: 'application', catalog: 'docker-image', image: form.value.image })
   } else if (step.value === 'app-vcs') {
     emit('create', { name: form.value.name, type: 'application', catalog: 'version-control', image: form.value.repo })
   }
@@ -82,12 +76,7 @@ function submit() {
   <Dialog :open="open" @update:open="(v: boolean) => { if (!v) reset(); emit('update:open', v) }">
     <DialogContent class="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>
-          <button v-if="step !== 'root'" class="mr-1 align-middle text-muted-foreground hover:text-foreground" @click="back">
-            <ArrowLeft class="size-4" />
-          </button>
-          Add Service
-        </DialogTitle>
+        <DialogTitle>Add Service</DialogTitle>
         <DialogDescription>Pick what to deploy into this environment.</DialogDescription>
       </DialogHeader>
 
@@ -178,10 +167,6 @@ function submit() {
           <Label>Docker image</Label>
           <Input v-model="form.image" placeholder="nginx:latest" />
         </div>
-        <div class="grid gap-1.5">
-          <Label>Ports (comma separated, optional)</Label>
-          <Input v-model="form.ports" placeholder="80, 443" />
-        </div>
       </div>
 
       <!-- APP: version control form -->
@@ -197,8 +182,7 @@ function submit() {
       </div>
 
       <DialogFooter v-if="step === 'app-docker' || step === 'app-vcs'">
-        <Button variant="outline" @click="back">Back</Button>
-        <Button :disabled="!canSubmit" @click="submit">
+        <Button class="w-full" :disabled="!canSubmit" @click="submit">
           <Loader2 v-if="loading" class="mr-1 size-4 animate-spin" />
           Add Service
         </Button>
