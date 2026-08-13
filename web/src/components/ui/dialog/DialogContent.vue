@@ -29,8 +29,10 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 
 // Clicking the overlay / outside must NEVER dismiss the dialog (user rule).
 // Only the close button, Cancel, or Escape may close it.
-function preventOutside() {
-  /* no-op — swallows the outside/pointer-down event so reka-ui won't close */
+// reka-ui's DismissableLayer closes on interactOutside unless the handler
+// calls preventDefault() — a no-op is NOT enough.
+function preventOutside(event: Event) {
+  event.preventDefault()
 }
 </script>
 

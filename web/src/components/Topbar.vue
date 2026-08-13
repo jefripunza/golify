@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { Menu, LogOut } from '@lucide/vue'
+import { Menu, LogOut, Sun, Moon } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { useSidebar } from '@/composables/useSidebar'
 import { useHealth } from '@/stores/health'
 import { useAuthStore } from '@/stores/auth'
+import { useTheme } from '@/composables/useTheme'
 
 const { toggleMobile } = useSidebar()
 const health = useHealth()
 const auth = useAuthStore()
 const router = useRouter()
+const theme = useTheme()
 
 function logout() {
   auth.logout()
@@ -44,6 +46,16 @@ function logout() {
       <button
         type="button"
         class="rounded-md border border-border p-1.5 hover:bg-muted"
+        :aria-label="theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="theme.isDark ? 'Light mode' : 'Dark mode'"
+        @click="theme.toggle"
+      >
+        <Sun v-if="theme.isDark" class="size-3.5" />
+        <Moon v-else class="size-3.5" />
+      </button>
+      <button
+        type="button"
+        class="rounded-md border border-border p-1.5 hover:bg-muted"
         aria-label="Sign out"
         title="Sign out"
         @click="logout"
@@ -52,8 +64,18 @@ function logout() {
       </button>
     </div>
 
-    <!-- Mobile actions: [logout] [hamburger] — hamburger on the RIGHT -->
+    <!-- Mobile actions: [theme] [logout] [hamburger] — hamburger on the RIGHT -->
     <div class="flex items-center gap-2 md:hidden">
+      <button
+        type="button"
+        class="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-card active:scale-95"
+        :aria-label="theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+        :title="theme.isDark ? 'Light mode' : 'Dark mode'"
+        @click="theme.toggle"
+      >
+        <Sun v-if="theme.isDark" class="size-4" />
+        <Moon v-else class="size-4" />
+      </button>
       <button
         v-if="auth.user"
         type="button"

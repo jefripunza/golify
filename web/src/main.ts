@@ -5,6 +5,10 @@ import { PiniaColada } from '@pinia/colada'
 import App from './App.vue'
 import router from './router'
 import './assets/main.css'
+import { useTheme } from './composables/useTheme'
+
+// apply saved theme before first paint (avoids light→dark flash)
+useTheme().init()
 
 // Global error reporting — catches errors that escape the ErrorBoundary
 // (module-load failures, async errors, router navigation errors, unhandled
