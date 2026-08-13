@@ -121,7 +121,7 @@ async function confirmDelete() {
       <RouterLink
         v-for="p in projects.projects"
         :key="p.id"
-        :to="`/projects/${p.id}`"
+        :to="`/project/${p.id}/environments`"
         class="block transition-transform hover:scale-[1.01]"
       >
         <Card>

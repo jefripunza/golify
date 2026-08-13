@@ -56,9 +56,9 @@ const router = createRouter({
 
         // Projects
         { path: 'projects', name: 'projects', component: ProjectsView, ...requireAuth() },
-        { path: 'projects/:projectId', name: 'project-detail', component: ProjectDetailView, ...requireAuth() },
-        { path: 'projects/:projectId/:envId', name: 'env-detail', component: EnvDetailView, ...requireAuth() },
-        { path: 'projects/:projectId/:envId/:serviceId', name: 'service-detail', component: ServiceDetailView, ...requireAuth() },
+        { path: 'project/:projectId/environments', name: 'project-environments', component: ProjectDetailView, ...requireAuth() },
+        { path: 'project/:projectId/environment/:envId/services', name: 'env-services', component: EnvDetailView, ...requireAuth() },
+        { path: 'project/:projectId/environment/:envId/service/:serviceId', name: 'service-detail', component: ServiceDetailView, ...requireAuth() },
 
         // Infrastructure
         { path: 'servers', name: 'servers', component: ServersView, ...requireAuth() },

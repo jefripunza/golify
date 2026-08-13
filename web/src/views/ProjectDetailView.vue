@@ -27,8 +27,8 @@ watchEffect(() => {
   const p = project.value
   if (p && p.environments.length === 1 && route.query.envs === undefined) {
     const only = p.environments[0]
-    if (route.path === `/projects/${p.id}`) {
-      router.replace(`/projects/${p.id}/${only.id}`)
+    if (route.path === `/project/${p.id}/environments`) {
+      router.replace(`/project/${p.id}/environment/${only.id}/services`)
     }
   }
 })
@@ -46,9 +46,9 @@ function statusColor(s: string) {
   <div v-if="!project" class="text-sm text-muted-foreground">Project not found.</div>
   <div v-else class="grid gap-4">
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
-      <RouterLink to="/projects" class="hover:text-foreground">Projects</RouterLink>
+      <RouterLink to="/projects" class="hover:text-foreground">{{ project.name }}</RouterLink>
       <span>/</span>
-      <span>{{ project.name }}</span>
+      <span>environments</span>
     </div>
 
     <header>
@@ -60,7 +60,7 @@ function statusColor(s: string) {
       <RouterLink
         v-for="env in project.environments"
         :key="env.id"
-        :to="`/projects/${project.id}/${env.id}`"
+        :to="`/project/${project.id}/environment/${env.id}/services`"
         class="block transition-transform hover:scale-[1.01]"
       >
         <Card>

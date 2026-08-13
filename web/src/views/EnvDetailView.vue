@@ -36,11 +36,9 @@ function statusColor(s: string) {
   <div v-if="!project || !env" class="text-sm text-muted-foreground">Environment not found.</div>
   <div v-else class="grid gap-4">
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
-      <RouterLink to="/projects" class="hover:text-foreground">Projects</RouterLink>
+      <RouterLink to="/projects" class="hover:text-foreground">{{ project.name }}</RouterLink>
       <span>/</span>
-      <RouterLink :to="`/projects/${project.id}`" class="hover:text-foreground">{{ project.name }}</RouterLink>
-      <span>/</span>
-      <RouterLink :to="`/projects/${project.id}?envs=1`" class="hover:text-foreground">{{ env.name }}</RouterLink>
+      <RouterLink :to="`/project/${project.id}/environments`" class="hover:text-foreground">{{ env.name }}</RouterLink>
     </div>
 
     <header>
@@ -56,7 +54,7 @@ function statusColor(s: string) {
       <RouterLink
         v-for="svc in env.services"
         :key="svc.id"
-        :to="`/projects/${project.id}/${env.id}/${svc.id}`"
+        :to="`/project/${project.id}/environment/${env.id}/service/${svc.id}`"
         class="block transition-transform hover:scale-[1.01]"
       >
         <Card>

@@ -141,13 +141,11 @@ function action(a: 'start' | 'stop' | 'restart') {
   </div>
   <div v-else class="grid gap-4">
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
-      <RouterLink to="/projects" class="hover:text-foreground">Projects</RouterLink>
-      <span>/</span>
-      <RouterLink :to="`/projects/${project.id}`" class="hover:text-foreground">
+      <RouterLink to="/projects" class="hover:text-foreground">
         <FolderTree class="inline size-3" /> {{ project.name }}
       </RouterLink>
       <span>/</span>
-      <RouterLink :to="`/projects/${project.id}/${env.id}`" class="hover:text-foreground">
+      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="hover:text-foreground">
         <Layers class="inline size-3" /> {{ env.name }}
       </RouterLink>
       <span>/</span>
