@@ -20,6 +20,20 @@ import (
 //	              environment's UUID v7 ID). Creating an environment creates
 //	              a new kind cluster. Every new project gets a default
 //	              "production" environment (and thus one cluster).
+
+// isNumeric reports whether s is a plain non-negative integer (ports).
+func isNumeric(s string) bool {
+	if s == "" {
+		return true // empty container port is allowed (host-only mapping)
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func registerProjects(r fiber.Router) {
 	auth := r.Group("/projects", requireAuth)
 
@@ -517,6 +531,14 @@ func registerProjects(r fiber.Router) {
 		if body.Port == "" {
 			body.Port = "80"
 		}
+		// unique check: same host (subdomain+domain combo, incl. bare root) not allowed twice per service
+		var count int64
+		if err := db.Model(&ServiceDomain{}).Where("service_id = ? AND host = ?", c.Params("serviceId"), body.Host).Count(&count).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		if count > 0 {
+			return c.Status(409).JSON(fiber.Map{"error": "domain already exists: " + body.Host})
+		}
 		sd := ServiceDomain{
 			ServiceID: c.Params("serviceId"),
 			Host:      body.Host,
@@ -554,6 +576,14 @@ func registerProjects(r fiber.Router) {
 			if *body.Host == "" {
 				return c.Status(400).JSON(fiber.Map{"error": "host required"})
 			}
+			// unique check on update: same host not allowed, excluding this domain itself
+			var count int64
+			if err := db.Model(&ServiceDomain{}).Where("service_id = ? AND host = ? AND id <> ?", sd.ServiceID, *body.Host, did).Count(&count).Error; err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			}
+			if count > 0 {
+				return c.Status(409).JSON(fiber.Map{"error": "domain already exists: " + *body.Host})
+			}
 			sd.Host = *body.Host
 		}
 		if body.Port != nil {
@@ -585,6 +615,10 @@ func registerProjects(r fiber.Router) {
 		if err := c.Bind().JSON(&body); err != nil || body.HostPort == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "host_port required"})
 		}
+		// ports must be numeric
+		if !isNumeric(body.HostPort) || !isNumeric(body.ContainerPort) {
+			return c.Status(400).JSON(fiber.Map{"error": "ports must be numbers"})
+		}
 		sn := ServiceNetwork{
 			ServiceID:     c.Params("serviceId"),
 			HostPort:      body.HostPort,
@@ -613,9 +647,15 @@ func registerProjects(r fiber.Router) {
 			if *body.HostPort == "" {
 				return c.Status(400).JSON(fiber.Map{"error": "host_port required"})
 			}
+			if !isNumeric(*body.HostPort) {
+				return c.Status(400).JSON(fiber.Map{"error": "ports must be numbers"})
+			}
 			sn.HostPort = *body.HostPort
 		}
 		if body.ContainerPort != nil {
+			if !isNumeric(*body.ContainerPort) {
+				return c.Status(400).JSON(fiber.Map{"error": "ports must be numbers"})
+			}
 			sn.ContainerPort = *body.ContainerPort
 		}
 		if err := db.Save(&sn).Error; err != nil {

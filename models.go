@@ -111,12 +111,12 @@ type Service struct {
 // mapped to a specific port of that service (Coolify-style).
 type ServiceDomain struct {
 	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
-	Host      string    `gorm:"size:255;not null" json:"host"`    // e.g. app.example.com
+	ServiceID UUID      `gorm:"not null;uniqueIndex:idx_service_host;size:36" json:"service_id"`
+	Host      string    `gorm:"size:255;not null;uniqueIndex:idx_service_host" json:"host"` // e.g. app.example.com — unique per service
 	Port      string    `gorm:"size:16;default:'80'" json:"port"` // target port on the service
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
-
 // ServiceNetwork is a port mapping attached to a single Service
 // (host port → container port), stored in the service_networks table.
 type ServiceNetwork struct {

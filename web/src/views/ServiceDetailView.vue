@@ -182,6 +182,15 @@ async function addOrUpdateDomain() {
     domainError.value = 'Fill the subdomain or pick a root domain first.'
     return
   }
+  // Unique check: same host (subdomain+domain, incl. bare root) not allowed twice.
+  const svc = service.value
+  const exists = (svc?.domains ?? []).some(
+    (d) => d.host === host && d.id !== editingDomainId.value,
+  )
+  if (exists) {
+    domainError.value = `Domain already exists: ${host}`
+    return
+  }
   domainError.value = ''
   const port = newDomain.port.trim() || '80'
   try {
@@ -262,6 +271,17 @@ async function removeMapping(nid: string) {
   } catch (e: any) {
     mappingError.value = e?.message || 'Failed to remove port mapping'
   }
+}
+
+// Port inputs: digits only (same guard style as replicas).
+function sanitizePort(v: unknown): string {
+  return String(v ?? '').replace(/[^\d]/g, '')
+}
+function onPortKeyup(e: Event, target: 'from' | 'to') {
+  const el = e.target as HTMLInputElement
+  const clean = sanitizePort(el.value)
+  newMapping[target] = clean
+  if (el.value !== clean) el.value = clean
 }
 
 // Prevent number input value change on scroll (wheel) — CSS hides the spinners.
@@ -629,8 +649,30 @@ const sectionIcons: Record<string, string> = {
               <CardContent class="grid gap-3">
                 <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
                 <div class="flex gap-2">
-                  <Input v-model="newMapping.from" placeholder="host port (3000)" class="flex-1" />
-                  <Input v-model="newMapping.to" placeholder="container port (3000)" class="flex-1" />
+                  <input
+                    :value="newMapping.from"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    autocomplete="off"
+                    placeholder="host port (3000)"
+                    class="number-input-no-spin h-9 w-full flex-1 rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
+                    @wheel.prevent="preventNumberScroll"
+                    @keydown="blockReplicaKeys"
+                    @keyup="onPortKeyup($event, 'from')"
+                  />
+                  <input
+                    :value="newMapping.to"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    autocomplete="off"
+                    placeholder="container port (3000)"
+                    class="number-input-no-spin h-9 w-full flex-1 rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
+                    @wheel.prevent="preventNumberScroll"
+                    @keydown="blockReplicaKeys"
+                    @keyup="onPortKeyup($event, 'to')"
+                  />
                   <Button
                     size="sm"
                     variant="outline"

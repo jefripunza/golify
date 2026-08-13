@@ -263,26 +263,21 @@ export const useProjectsStore = defineStore('projects', () => {
     const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains`, {
       json: { host, port },
     }).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s) s.domains = [...(s.domains ?? []), { id: String(created.id), host: created.host, port: created.port }]
+    // re-fetch so the list reflects exactly what the DB has (fast + consistent)
+    await fetchOnce()
     return created
   }
 
   async function removeServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string) {
     await authed().delete(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains/${domainId}`).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s) s.domains = (s.domains ?? []).filter((d) => d.id !== domainId)
+    await fetchOnce()
   }
 
   async function updateServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string, patch: { host: string; port: string }) {
     const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains/${domainId}`, {
       json: patch,
     }).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s && s.domains) {
-      const i = s.domains.findIndex((d) => d.id === domainId)
-      if (i >= 0) s.domains[i] = { id: domainId, host: updated.host, port: updated.port }
-    }
+    await fetchOnce()
     return updated
   }
 
@@ -291,8 +286,7 @@ export const useProjectsStore = defineStore('projects', () => {
     const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks`, {
       json: { host_port: hostPort, container_port: containerPort },
     }).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s) s.networks = [...(s.networks ?? []), { id: String(created.id), hostPort: created.host_port, containerPort: created.container_port }]
+    await fetchOnce()
     return created
   }
 
@@ -300,18 +294,13 @@ export const useProjectsStore = defineStore('projects', () => {
     const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks/${networkId}`, {
       json: patch,
     }).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s && s.networks) {
-      const i = s.networks.findIndex((n) => n.id === networkId)
-      if (i >= 0) s.networks[i] = { id: networkId, hostPort: updated.host_port, containerPort: updated.container_port }
-    }
+    await fetchOnce()
     return updated
   }
 
   async function removeServiceNetwork(projectId: string, envId: string, serviceId: string, networkId: string) {
     await authed().delete(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks/${networkId}`).json<any>()
-    const s = getService(projectId, envId, serviceId)
-    if (s) s.networks = (s.networks ?? []).filter((n) => n.id !== networkId)
+    await fetchOnce()
   }
 
   // ─── Root domains (for the subdomain dropdown) ──────────────────────────
