@@ -473,6 +473,7 @@ interface LogContainer {
   loading: boolean
   error: string
   linesLimit: number   // Lines selector (100/200/500/1000)
+  autoScroll: boolean  // arrow-down toggle: auto-scroll to bottom on new lines
 }
 
 const containers = ref<LogContainer[]>([])
@@ -507,6 +508,7 @@ async function loadContainers() {
         loading: false,
         error: prev?.error ?? '',
         linesLimit: prev?.linesLimit ?? 100,
+        autoScroll: prev?.autoScroll ?? true,
       }
     })
     // close WS for containers that disappeared
@@ -553,6 +555,13 @@ function connectContainerLogs(c: LogContainer) {
   c.ws.onmessage = (ev) => {
     c.lines = [...c.lines, String(ev.data)]
     if (c.lines.length > 500) c.lines = c.lines.slice(-500)
+    // auto-scroll to bottom if the toggle is on
+    if (c.autoScroll) {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`log-pre-${c.id}`)
+        if (el) el.scrollTop = el.scrollHeight
+      })
+    }
   }
   c.ws.onerror = () => {
     c.error = '[connection error]'
@@ -1285,12 +1294,21 @@ const sectionIcons: Record<string, string> = {
               <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Download" @click="downloadContainerLog(c)">
                 <Download class="size-3.5" />
               </button>
+              <!-- auto-scroll toggle: arrow-down (active = follow new logs) -->
+              <button
+                class="rounded p-1 transition-colors"
+                :class="c.autoScroll ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
+                :title="c.autoScroll ? 'Auto-scroll: on' : 'Auto-scroll: off'"
+                @click="c.autoScroll = !c.autoScroll; if (c.autoScroll) requestAnimationFrame(() => { const el = document.getElementById(`log-pre-${c.id}`); if (el) el.scrollTop = el.scrollHeight })"
+              >
+                <ChevronDown class="size-3.5" />
+              </button>
               <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Fullscreen" @click="fullscreenContainerLog(c)">
                 <Maximize class="size-3.5" />
               </button>
             </div>
             <div v-if="c.loading" class="px-3 py-2 text-xs text-muted-foreground">Connecting…</div>
-            <pre v-else class="max-h-80 overflow-auto p-3 font-mono text-xs leading-relaxed"><code>{{ visibleLines(c).join('\n') || c.error || 'No log output yet.' }}</code></pre>
+            <pre :id="`log-pre-${c.id}`" v-else class="max-h-80 overflow-auto p-3 font-mono text-xs leading-relaxed"><code>{{ visibleLines(c).join('\n') || c.error || 'No log output yet.' }}</code></pre>
           </div>
         </div>
       </div>
