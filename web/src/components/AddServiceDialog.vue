@@ -104,14 +104,14 @@ function submit() {
           <Database class="size-5 text-primary" />
           <div>
             <p class="font-medium">Database</p>
-            <p class="text-xs text-muted-foreground">Description</p>
+            <p class="text-xs text-muted-foreground">Deploy a database engine for storing your application data</p>
           </div>
         </button>
         <button class="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent" @click="step = 'tool'; selectedType = 'tool'">
           <Wrench class="size-5 text-primary" />
           <div>
             <p class="font-medium">Tool</p>
-            <p class="text-xs text-muted-foreground">Description</p>
+            <p class="text-xs text-muted-foreground">Deploy a tool or add-on to extend your application</p>
           </div>
         </button>
       </div>
