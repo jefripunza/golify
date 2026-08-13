@@ -269,14 +269,13 @@ function preventNumberScroll(e: WheelEvent) {
   e.preventDefault()
 }
 
-// Sanitize a replica count string: digits only, no leading zeros (but keep
-// a lone "0" and empty string as-is so the user can clear/type freely).
-// The min-1 clamp happens at save time (and backend guards too).
+// Sanitize a replica count string: digits only — minus and letters are
+// stripped out entirely (replaced/hilang). A lone "0" typed from empty is
+// rejected (min 1), leading zeros stripped ('05' -> '5'), empty stays empty
+// so the user can clear and retype. Clamp to 1 happens at save time.
 function sanitizeReplicas(v: unknown): string {
-  let s = String(v ?? '').replace(/[^\d]/g, '') // strip anything non-digit (kills -, e, .)
-  // strip leading zeros, but keep a single "0" (and empty) untouched
-  s = s.replace(/^0+(?=\d)/, '')
-  return s
+  const s = String(v ?? '').replace(/[^\d]/g, '') // strip anything non-digit (kills -, e, letters)
+  return s.replace(/^0+/, '') // '0' -> '', '05' -> '5', '10' -> '10'
 }
 
 // Hard guard: block invalid keys (-, e, E, ., ,, +) before they ever
@@ -287,17 +286,15 @@ function blockReplicaKeys(e: KeyboardEvent) {
   }
 }
 
-// Sync the DOM value immediately after sanitizing so the displayed text
-// can never show a rejected character (fixes the "-1" visible bug).
-// Stores the raw (possibly empty / lone "0") string — clamping to min 1
-// happens at save time.
-function onReplicasInput(e: Event, target: 'replicas' | 'replicasMin' | 'replicasMax') {
+// Runs on keyup: sanitize after every keystroke so minus/letters never
+// survive, and a lone "0" from empty is rejected (stays empty).
+function onReplicasKeyup(e: Event, target: 'replicas' | 'replicasMin' | 'replicasMax') {
   const el = e.target as HTMLInputElement
   const clean = sanitizeReplicas(el.value)
   form[target] = clean as never
   // Force the DOM to reflect the sanitized value right away — Vue's
   // :value binding won't re-render when the value didn't change.
-  el.value = clean
+  if (el.value !== clean) el.value = clean
 }
 
 // Block paste of non-digit content (e.g. "-1", "3e4" from clipboard).
@@ -307,7 +304,7 @@ function blockReplicaPaste(e: ClipboardEvent) {
     e.preventDefault()
     return
   }
-  // Allow the paste but strip non-digits — the @input handler cleans up.
+  // Allow the paste but strip non-digits — the @keyup handler cleans up.
   const clean = sanitizeReplicas(text)
   if (clean !== text) {
     e.preventDefault()
@@ -315,7 +312,7 @@ function blockReplicaPaste(e: ClipboardEvent) {
     const start = el.selectionStart ?? el.value.length
     const end = el.selectionEnd ?? el.value.length
     el.value = el.value.slice(0, start) + clean + el.value.slice(end)
-    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }))
   }
 }
 
@@ -717,8 +714,8 @@ const sectionIcons: Record<string, string> = {
                       class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                       @wheel.prevent="preventNumberScroll"
                       @keydown="blockReplicaKeys"
+                      @keyup="onReplicasKeyup($event, 'replicas')"
                       @paste="blockReplicaPaste"
-                      @input="onReplicasInput($event, 'replicas')"
                     />
                   </div>
                 </template>
@@ -735,8 +732,8 @@ const sectionIcons: Record<string, string> = {
                         class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                         @wheel.prevent="preventNumberScroll"
                         @keydown="blockReplicaKeys"
+                        @keyup="onReplicasKeyup($event, 'replicasMin')"
                         @paste="blockReplicaPaste"
-                        @input="onReplicasInput($event, 'replicasMin')"
                       />
                     </div>
                     <div class="grid gap-1.5">
@@ -750,8 +747,8 @@ const sectionIcons: Record<string, string> = {
                         class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
                         @wheel.prevent="preventNumberScroll"
                         @keydown="blockReplicaKeys"
+                        @keyup="onReplicasKeyup($event, 'replicasMax')"
                         @paste="blockReplicaPaste"
-                        @input="onReplicasInput($event, 'replicasMax')"
                       />
                     </div>
                   </div>
