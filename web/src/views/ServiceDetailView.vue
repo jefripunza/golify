@@ -1047,10 +1047,15 @@ const sectionIcons: Record<string, string> = {
         <div
           v-for="dep in deployments"
           :key="dep.id"
-          class="rounded-md border border-l-4 bg-card p-3 transition-colors hover:bg-accent/50"
+          class="cursor-pointer rounded-md border border-l-4 bg-card p-3 transition-colors hover:bg-accent/50"
           :class="statusClass(dep.status)"
+          role="button"
+          tabindex="0"
+          @click="openDeployLog(dep)"
+          @keydown.enter="openDeployLog(dep)"
+          @keydown.space.prevent="openDeployLog(dep)"
         >
-          <div class="flex cursor-pointer items-center justify-between gap-3" @click="openDeployLog(dep)">
+          <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <span class="inline-block size-2 rounded-full" :class="dep.status === 'success' ? 'bg-green-500' : dep.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'" />
               <span class="text-sm font-medium" :class="dep.status === 'success' ? 'text-green-500' : dep.status === 'failed' ? 'text-red-500' : 'text-yellow-500'">
