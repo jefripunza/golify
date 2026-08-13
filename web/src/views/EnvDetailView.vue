@@ -51,7 +51,7 @@ function statusColor(s: string) {
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
       <RouterLink to="/projects" class="hover:text-foreground">{{ project.name }}</RouterLink>
       <span>/</span>
-      <RouterLink :to="`/project/${project.id}/environments`" class="hover:text-foreground">{{ env.name }}</RouterLink>
+      <RouterLink :to="`/project/${project.id}/environments?envs=1`" class="hover:text-foreground">{{ env.name }}</RouterLink>
     </div>
 
     <header>
