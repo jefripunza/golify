@@ -9,26 +9,28 @@ import (
 )
 
 // ensureSelfSignedCert generates a self-signed certificate for the given
-// hostname (CN + SAN) into data/ssl/custom/<host>.crt / .key if it does not
-// already exist. The TLS config's GetCertificate picks these up, so HTTPS
-// works out of the box for any attached domain.
+// hostname (CN + SAN) into data/ssl/letsencrypt/<host>/fullchain.pem and
+// privkey.pem if it does not already exist — mirroring the layout a real
+// ACME (Let's Encrypt) client would produce, so the TLS loader's existing
+// letsencrypt preference handles it transparently.
 //
-// Later this can be replaced by real ACME (Let's Encrypt) issuance — the
-// loader already prefers data/ssl/letsencrypt/<host>/fullchain.pem when
-// present.
+// NOTE: data/ssl/custom/ is reserved for certificates the user purchases or
+// uploads manually (Paid SSL); auto-generated certificates must never land
+// there.
 func ensureSelfSignedCert(host string) error {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	if host == "" {
 		return fmt.Errorf("empty host")
 	}
-	crt := filepath.Join(dataDir, "ssl", "custom", host+".crt")
-	key := filepath.Join(dataDir, "ssl", "custom", host+".key")
+	dir := filepath.Join(dataDir, "ssl", "letsencrypt", host)
+	crt := filepath.Join(dir, "fullchain.pem")
+	key := filepath.Join(dir, "privkey.pem")
 	if _, err := os.Stat(crt); err == nil {
 		if _, err := os.Stat(key); err == nil {
 			return nil // already generated
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(crt), 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	// openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
