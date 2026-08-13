@@ -20,6 +20,8 @@ const props = defineProps<{
   /** The exact text the user must type to enable the delete button. */
   confirmText: string
   loading?: boolean
+  /** Error message from the backend (e.g. cascade rule violated). */
+  error?: string
 }>()
 
 const emit = defineEmits<{
@@ -59,7 +61,7 @@ function onOpenChange(open: boolean) {
       </DialogHeader>
 
       <div class="grid gap-1.5">
-        <Label for="confirm-copy">Project name (copy from here)</Label>
+        <Label for="confirm-copy">{{ itemName }} name (copy from here)</Label>
         <Input
           id="confirm-copy"
           :model-value="confirmText"
@@ -84,6 +86,9 @@ function onOpenChange(open: boolean) {
         />
         <p v-if="!matches && typed" class="text-xs text-muted-foreground">
           Doesn't match yet — keep typing.
+        </p>
+        <p v-if="error" class="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          {{ error }}
         </p>
       </div>
 

@@ -185,6 +185,27 @@ export const useProjectsStore = defineStore('projects', () => {
     raw.value = raw.value.filter((p) => p.id !== id)
   }
 
+  async function removeEnv(projectId: string, envId: string) {
+    await authed().delete(`api/v1/projects/${projectId}/environments/${envId}`).json<any>()
+    const p = raw.value.find((p) => p.id === projectId)
+    if (p) p.environments = p.environments.filter((e: any) => e.id !== envId)
+  }
+
+  async function removeService(projectId: string, envId: string, serviceId: string) {
+    // Dummy services (svc-dummy-*) are FE-only placeholders until the
+    // backend service CRUD is wired up — removing them is local-only.
+    if (serviceId.startsWith('svc-dummy-')) {
+      const p = raw.value.find((p) => p.id === projectId)
+      const e = p?.environments?.find((e: any) => e.id === envId)
+      if (e) e.services = e.services.filter((s: any) => s.id !== serviceId)
+      return
+    }
+    await authed().delete(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}`).json<any>()
+    const p = raw.value.find((p) => p.id === projectId)
+    const e = p?.environments?.find((e: any) => e.id === envId)
+    if (e) e.services = e.services.filter((s: any) => s.id !== serviceId)
+  }
+
   async function update(id: string, name: string, description: string) {
     const updated = await authed().patch(`api/v1/projects/${id}`, { json: { name, description } }).json<any>()
     const i = raw.value.findIndex((p) => p.id === id)
@@ -208,7 +229,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, removeService, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

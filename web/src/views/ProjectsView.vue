@@ -92,17 +92,20 @@ async function removeProject(id: string) {
 
 // delete confirmation dialog state
 const deleteTarget = ref<Project | null>(null)
+const deleteError = ref('')
 function requestDelete(p: Project) {
   deleteTarget.value = p
+  deleteError.value = ''
 }
 async function confirmDelete() {
   if (!deleteTarget.value || deleting.value) return
   deleting.value = deleteTarget.value.id
+  deleteError.value = ''
   try {
     await projects.remove(deleteTarget.value.id)
     deleteTarget.value = null
   } catch (e: any) {
-    error.value = e?.message || 'Failed to delete project'
+    deleteError.value = e?.message || 'Failed to delete project'
   } finally {
     deleting.value = null
   }
@@ -192,6 +195,7 @@ async function confirmDelete() {
       :item-name="'project'"
       :confirm-text="deleteTarget?.name ?? ''"
       :loading="deleting !== null"
+      :error="deleteError"
       @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
       @confirm="confirmDelete"
     />

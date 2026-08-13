@@ -171,13 +171,18 @@ func registerProjects(r fiber.Router) {
 
 	auth.Delete("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
-		// tear down every env cluster before deleting the project folder
-		var envs []Environment
-		if err := db.Where("project_id = ?", id).Find(&envs).Error; err != nil {
+		// Cascade rule: a project can only be deleted when it has ZERO
+		// environments (1 env = 1 active kind cluster). Deleting a project
+		// that still owns environments would leave live clusters orphaned,
+		// so we refuse until the user deletes every env first.
+		var envCount int64
+		if err := db.Model(&Environment{}).Where("project_id = ?", id).Count(&envCount).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		for _, e := range envs {
-			kindDeleteCluster(e.ID)
+		if envCount > 0 {
+			return c.Status(409).JSON(fiber.Map{
+				"error": fmt.Sprintf("cannot delete project: %d environment(s) still exist — delete all environments (clusters) first", envCount),
+			})
 		}
 		if err := db.Delete(&Project{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -233,6 +238,27 @@ func registerProjects(r fiber.Router) {
 		})
 	})
 
+	// Delete an environment. Cascade rule: only allowed when the env has
+	// ZERO services — otherwise refuse (user must delete services first).
+	auth.Delete("/:projectId/environments/:envId", func(c fiber.Ctx) error {
+		eid := c.Params("envId")
+		var svcCount int64
+		if err := db.Model(&Service{}).Where("environment_id = ?", eid).Count(&svcCount).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		if svcCount > 0 {
+			return c.Status(409).JSON(fiber.Map{
+				"error": fmt.Sprintf("cannot delete environment: %d service(s) still exist — delete all services first", svcCount),
+			})
+		}
+		// tear down the kind cluster named after this env UUID
+		kindDeleteCluster(eid)
+		if err := db.Delete(&Environment{}, "id = ?", eid).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": eid})
+	})
+
 	// ─── Services within an environment ────────────────────────────────────
 	auth.Get("/:projectId/environments/:envId/services", func(c fiber.Ctx) error {
 		var rows []Service
@@ -275,6 +301,15 @@ func registerProjects(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(201).JSON(s)
+	})
+
+	// Delete a single service (innermost level — always allowed, no children).
+	auth.Delete("/:projectId/environments/:envId/services/:serviceId", func(c fiber.Ctx) error {
+		sid := c.Params("serviceId")
+		if err := db.Delete(&Service{}, "id = ?", sid).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": sid})
 	})
 
 	// ─── Start / Stop / Restart a service (status switch) ─────────────────
