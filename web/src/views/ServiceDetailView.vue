@@ -269,6 +269,14 @@ function preventNumberScroll(e: WheelEvent) {
   e.preventDefault()
 }
 
+// Sanitize a replica count: digits only, no leading zero, min 1.
+// Rejects "-", "e", "0" at the start, decimals, etc.
+function sanitizeReplicas(v: unknown): number {
+  const s = String(v ?? '').replace(/[^\d]/g, '') // strip anything non-digit (kills -, e, .)
+  if (!s) return 1
+  return Math.max(1, parseInt(s.replace(/^0+/, '') || '1', 10))
+}
+
 // ─── Status + actions ─────────────────────────────────────────────────────
 function statusVariant(s?: string) {
   switch (s) {
@@ -415,8 +423,8 @@ const sectionIcons: Record<string, string> = {
       </div>
     </header>
 
-    <!-- Top tab bar (Coolify-style, simple buttons — no flex-1 stretch) -->
-    <div class="flex flex-wrap gap-1 border-b text-sm">
+    <!-- Top tab bar: buttons (desktop) -->
+    <div class="hidden flex-wrap gap-1 border-b text-sm sm:flex">
       <button
         v-for="t in topTabs"
         :key="t.id"
@@ -428,10 +436,20 @@ const sectionIcons: Record<string, string> = {
       </button>
     </div>
 
+    <!-- Top tab bar: dropdown (mobile) -->
+    <div class="sm:hidden">
+      <select
+        v-model="activeTab"
+        class="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option v-for="t in topTabs" :key="t.id" :value="t.id">{{ t.label }}</option>
+      </select>
+    </div>
+
     <!-- Configuration: sidebar LEFT + form content -->
     <div v-if="activeTab === 'configuration'" class="grid gap-4 md:grid-cols-[220px_1fr]">
-      <!-- Left sidebar -->
-      <nav class="flex flex-col gap-0.5 rounded-md border bg-card p-2 text-sm md:h-fit">
+      <!-- Left sidebar: buttons (desktop) -->
+      <nav class="hidden flex-col gap-0.5 rounded-md border bg-card p-2 text-sm md:flex md:h-fit">
         <button
           v-for="sec in sections"
           :key="sec.id"
@@ -443,6 +461,16 @@ const sectionIcons: Record<string, string> = {
           <span class="truncate">{{ sec.label }}</span>
         </button>
       </nav>
+
+      <!-- Left sidebar: dropdown (mobile) -->
+      <div class="md:hidden">
+        <select
+          v-model="activeSection"
+          class="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option v-for="sec in sections" :key="sec.id" :value="sec.id">{{ sectionIcons[sec.icon] }} {{ sec.label }}</option>
+        </select>
+      </div>
 
       <!-- Main content -->
       <div class="min-w-0">
@@ -638,18 +666,42 @@ const sectionIcons: Record<string, string> = {
                 <template v-if="form.replicasMode === 'fix'">
                   <div class="grid gap-1.5">
                     <Label>Replicas *</Label>
-                    <Input v-model.number="form.replicas" type="number" min="1" placeholder="1" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
+                    <input
+                      :value="String(form.replicas)"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
+                      @wheel.prevent="preventNumberScroll"
+                      @input="form.replicas = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                    />
                   </div>
                 </template>
                 <template v-else>
                   <div class="grid grid-cols-2 gap-3">
                     <div class="grid gap-1.5">
                       <Label>Min *</Label>
-                      <Input v-model.number="form.replicasMin" type="number" min="1" placeholder="1" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
+                      <input
+                        :value="String(form.replicasMin)"
+                        type="text"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
+                        @wheel.prevent="preventNumberScroll"
+                        @input="form.replicasMin = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                      />
                     </div>
                     <div class="grid gap-1.5">
                       <Label>Max *</Label>
-                      <Input v-model.number="form.replicasMax" type="number" min="1" placeholder="5" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
+                      <input
+                        :value="String(form.replicasMax)"
+                        type="text"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        class="number-input-no-spin h-9 w-full rounded-md border bg-transparent px-2.5 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 dark:bg-input/30 md:text-sm"
+                        @wheel.prevent="preventNumberScroll"
+                        @input="form.replicasMax = sanitizeReplicas(($event.target as HTMLInputElement).value)"
+                      />
                     </div>
                   </div>
                 </template>
