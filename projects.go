@@ -12,23 +12,56 @@ import (
 
 // registerProjects wires the PaaS-style project/env/service CRUD under /api/v1.
 // All routes require a JWT (requireAuth) unless noted.
+//
+// Hierarchy (per Pak Jefri, 2026-08-13):
+//   Project = a plain folder (no cluster of its own)
+//   Environment = the Kubernetes cluster level (kind cluster named after the
+//                 environment's UUID v7 ID). Creating an environment creates
+//                 a new kind cluster. Every new project gets a default
+//                 "production" environment (and thus one cluster).
 func registerProjects(r fiber.Router) {
 	auth := r.Group("/projects", requireAuth)
 
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs").Order("id desc").Find(&rows).Error; err != nil {
+		if err := db.Preload("Envs.Services").Preload("Envs.Domains").
+			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		// attach live kind cluster status for each project (id = cluster name)
-		type projectWithStatus struct {
-			Project
-			ClusterStatus string `json:"cluster_status"`
-		}
-		out := make([]projectWithStatus, 0, len(rows))
+		// attach live kind cluster status to every environment (cluster name
+		// == environment UUID) — the project itself is just a folder
+		out := make([]fiber.Map, 0, len(rows))
 		for _, p := range rows {
-			out = append(out, projectWithStatus{Project: p, ClusterStatus: kindClusterStatus(p.ID)})
+			envs := make([]fiber.Map, 0, len(p.Envs))
+			for _, e := range p.Envs {
+				svcs := make([]fiber.Map, 0, len(e.Services))
+				for _, s := range e.Services {
+					svcs = append(svcs, fiber.Map{
+						"id": s.ID, "name": s.Name, "kind": s.Kind,
+						"image": s.Image, "compose_path": s.ComposePath,
+						"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
+						"ports": s.Ports, "created_at": s.CreatedAt,
+						"updated_at": s.UpdatedAt,
+					})
+				}
+				domains := make([]fiber.Map, 0, len(e.Domains))
+				for _, d := range e.Domains {
+					domains = append(domains, fiber.Map{"id": d.ID, "host": d.Host})
+				}
+				envs = append(envs, fiber.Map{
+					"id": e.ID, "name": e.Name, "is_production": e.IsProduction,
+					"cluster_status": kindClusterStatus(e.ID),
+					"services":       svcs, "domains": domains,
+					"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
+				})
+			}
+			out = append(out, fiber.Map{
+				"id": p.ID, "name": p.Name, "description": p.Description,
+				"source_id": p.SourceID, "environments": envs,
+				"env_count": len(envs),
+				"created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
+			})
 		}
 		return c.JSON(out)
 	})
@@ -42,27 +75,39 @@ func registerProjects(r fiber.Router) {
 		if err := c.Bind().JSON(&body); err != nil || body.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
 		}
-		// Project = Kubernetes cluster. The project ID (UUID v7) becomes the
-		// kind cluster name.
+		// Project = folder. It gets a default "production" environment, and
+		// that environment owns the kind cluster (cluster name = env UUID).
 		p := Project{Name: body.Name, Description: body.Description, SourceID: body.SourceID}
-		p.ID = newID() // explicit so we know the cluster name before creating
+		p.ID = newID()
 		if err := db.Create(&p).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		// create the kind cluster named after the project UUID
-		clusterName := p.ID
-		if err := kindCreateCluster(clusterName); err != nil {
-			// cluster creation failed — roll back the DB row so the list
-			// only shows clusters that actually exist
+		env := Environment{ProjectID: p.ID, Name: "production", IsProduction: true}
+		env.ID = newID() // cluster name is the env UUID
+		if err := db.Create(&env).Error; err != nil {
+			db.Delete(&Project{}, "id = ?", p.ID)
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// create the kind cluster named after the environment UUID
+		if err := kindCreateCluster(env.ID); err != nil {
+			db.Delete(&Environment{}, "id = ?", env.ID)
 			db.Delete(&Project{}, "id = ?", p.ID)
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
-		return c.Status(201).JSON(p)
+		return c.Status(201).JSON(fiber.Map{
+			"id": p.ID, "name": p.Name, "description": p.Description,
+			"source_id": p.SourceID, "environments": []fiber.Map{{
+				"id": env.ID, "name": env.Name, "is_production": true,
+				"cluster_status": "Running", "services": []fiber.Map{},
+				"domains": []fiber.Map{}, "created_at": env.CreatedAt,
+				"updated_at": env.UpdatedAt,
+			}}, "env_count": 1, "created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
+		})
 	})
 
 	auth.Get("/:id", func(c fiber.Ctx) error {
 		var p Project
-		err := db.Preload("Envs").Preload("Envs.Services").Preload("Envs.Domains").
+		err := db.Preload("Envs.Services").Preload("Envs.Domains").
 			First(&p, "id = ?", c.Params("id")).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
@@ -70,7 +115,34 @@ func registerProjects(r fiber.Router) {
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.JSON(p)
+		envs := make([]fiber.Map, 0, len(p.Envs))
+		for _, e := range p.Envs {
+			svcs := make([]fiber.Map, 0, len(e.Services))
+			for _, s := range e.Services {
+				svcs = append(svcs, fiber.Map{
+					"id": s.ID, "name": s.Name, "kind": s.Kind,
+					"image": s.Image, "compose_path": s.ComposePath,
+					"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
+					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
+				})
+			}
+			domains := make([]fiber.Map, 0, len(e.Domains))
+			for _, d := range e.Domains {
+				domains = append(domains, fiber.Map{"id": d.ID, "host": d.Host})
+			}
+			envs = append(envs, fiber.Map{
+				"id": e.ID, "name": e.Name, "is_production": e.IsProduction,
+				"cluster_status": kindClusterStatus(e.ID),
+				"services": svcs, "domains": domains,
+				"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
+			})
+		}
+		return c.JSON(fiber.Map{
+			"id": p.ID, "name": p.Name, "description": p.Description,
+			"source_id": p.SourceID, "environments": envs,
+			"env_count": len(envs),
+			"created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
+		})
 	})
 
 	// update (edit name/description — cluster name stays the UUID)
@@ -99,11 +171,17 @@ func registerProjects(r fiber.Router) {
 
 	auth.Delete("/:id", func(c fiber.Ctx) error {
 		id := c.Params("id")
+		// tear down every env cluster before deleting the project folder
+		var envs []Environment
+		if err := db.Where("project_id = ?", id).Find(&envs).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		for _, e := range envs {
+			kindDeleteCluster(e.ID)
+		}
 		if err := db.Delete(&Project{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		// also tear down the kind cluster named after the project UUID
-		kindDeleteCluster(id)
 		return c.JSON(fiber.Map{"deleted": id})
 	})
 
@@ -130,14 +208,29 @@ func registerProjects(r fiber.Router) {
 		if pid == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "bad project id"})
 		}
+		var p Project
+		if err := db.First(&p, "id = ?", pid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
+		}
+		// Environment = Kubernetes cluster. The env UUID v7 is the cluster
+		// name — creating an environment creates a brand-new kind cluster.
 		env := Environment{ProjectID: pid, Name: body.Name, IsProduction: body.IsProduction}
+		env.ID = newID()
 		for _, h := range body.Domains {
 			env.Domains = append(env.Domains, Domain{Host: h})
 		}
 		if err := db.Create(&env).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.Status(201).JSON(env)
+		if err := kindCreateCluster(env.ID); err != nil {
+			db.Delete(&Environment{}, "id = ?", env.ID)
+			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
+		}
+		return c.Status(201).JSON(fiber.Map{
+			"id": env.ID, "name": env.Name, "is_production": env.IsProduction,
+			"cluster_status": "Running", "services": []fiber.Map{},
+			"domains": []fiber.Map{}, "created_at": env.CreatedAt, "updated_at": env.UpdatedAt,
+		})
 	})
 
 	// ─── Services within an environment ────────────────────────────────────

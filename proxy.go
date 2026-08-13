@@ -75,23 +75,14 @@ func checkDomainRegistration(host string) int {
 	}
 
 	// 2) must have a service attached: the env-scoped Domain whose
-	//    environment has at least one Service.
-	var envIDs []string
-	if err := db.Model(&Domain{}).Where("host IN ?", candidates).Pluck("environment_id", &envIDs).Error; err != nil || len(envIDs) == 0 {
-		return 0
-	}
-	// domains registered without an environment are not attached to a service yet
-	valid := make([]string, 0, len(envIDs))
-	for _, eid := range envIDs {
-		if eid != "" {
-			valid = append(valid, eid)
-		}
-	}
-	if len(valid) == 0 {
-		return 0
-	}
+	//    environment has at least one Service. Domains registered without
+	//    an environment (environment_id NULL) are not attached yet.
 	var svc int64
-	if err := db.Model(&Service{}).Where("environment_id IN ?", valid).Count(&svc).Error; err != nil || svc == 0 {
+	if err := db.Model(&Service{}).
+		Where("environment_id IN (?)",
+			db.Model(&Domain{}).Where("host IN ?", candidates).
+				Where("environment_id IS NOT NULL").Select("environment_id"),
+		).Count(&svc).Error; err != nil || svc == 0 {
 		return 0
 	}
 	return 1

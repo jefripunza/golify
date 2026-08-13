@@ -40,7 +40,7 @@ function statusColor(s: string) {
       <span>/</span>
       <RouterLink :to="`/projects/${project.id}`" class="hover:text-foreground">{{ project.name }}</RouterLink>
       <span>/</span>
-      <span>{{ env.name }}</span>
+      <RouterLink :to="`/projects/${project.id}?envs=1`" class="hover:text-foreground">{{ env.name }}</RouterLink>
     </div>
 
     <header>
@@ -48,6 +48,7 @@ function statusColor(s: string) {
       <p class="flex items-center gap-2 text-sm text-muted-foreground">
         <Globe class="size-4" />
         <span class="truncate">{{ env.domains.join(', ') || 'no domain' }}</span>
+        <Badge variant="secondary">{{ env.clusterStatus ?? 'Unknown' }}</Badge>
       </p>
     </header>
 

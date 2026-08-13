@@ -112,6 +112,7 @@ function mapEnv(e: any): Environment {
     id: String(e.id),
     name: e.name,
     isProduction: e.is_production,
+    clusterStatus: e.cluster_status || 'Unknown',
     services: (e.services ?? []).map(mapSvc),
     domains: (e.domains ?? []).map((d: any) => d.host),
   }
@@ -136,7 +137,7 @@ function mapProject(p: any): Project {
     name: p.name,
     description: p.description,
     sourceId: p.source_id || undefined,
-    clusterStatus: p.cluster_status || 'Unknown',
+    envCount: p.env_count ?? (p.environments ?? []).length,
     environments: (p.environments ?? []).map(mapEnv),
     createdAt: p.created_at,
   }

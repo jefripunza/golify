@@ -25,6 +25,7 @@ export interface Environment {
   services: Service[]
   domains: string[]
   isProduction: boolean
+  clusterStatus?: string
 }
 
 export interface Project {
@@ -32,7 +33,7 @@ export interface Project {
   name: string
   description: string
   sourceId?: ID
-  clusterStatus?: string
+  envCount?: number
   environments: Environment[]
   createdAt: string
 }

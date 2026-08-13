@@ -395,7 +395,7 @@ async function fetchDomainCount() {
   }
 }
 
-// Total Cluster — projects whose kind cluster is Running
+// Total Cluster — total environments across all projects (each env = 1 cluster)
 const clusterCount = ref<number | null>(null)
 async function fetchClusterCount() {
   try {
@@ -406,7 +406,7 @@ async function fetchClusterCount() {
     if (res.ok) {
       const d = await res.json()
       clusterCount.value = Array.isArray(d)
-        ? d.filter((p: any) => p.cluster_status === 'Running').length
+        ? d.reduce((acc: number, p: any) => acc + (p.environments?.length ?? 0), 0)
         : 0
     }
   } catch {

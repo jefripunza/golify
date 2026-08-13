@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, RouterLink } from 'vue-router'
+import { computed, watchEffect } from 'vue'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   Card,
   CardContent,
@@ -11,12 +11,35 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useProjectsStore } from '@/stores'
-import { Layers, ArrowRight, Globe } from '@lucide/vue'
+import { Layers, ArrowRight, Globe, GitBranch } from '@lucide/vue'
 
 const route = useRoute()
+const router = useRouter()
 const store = useProjectsStore()
 const projectId = computed(() => String(route.params.projectId))
 const project = computed(() => store.get(projectId.value))
+
+// If the project has exactly ONE environment, skip the env list and go
+// straight to that environment's services (user rule). Exception: when the
+// user explicitly asked for the env list (?envs=1, e.g. clicking the env
+// name in the breadcrumb), do NOT redirect.
+watchEffect(() => {
+  const p = project.value
+  if (p && p.environments.length === 1 && route.query.envs === undefined) {
+    const only = p.environments[0]
+    if (route.path === `/projects/${p.id}`) {
+      router.replace(`/projects/${p.id}/${only.id}`)
+    }
+  }
+})
+
+function statusColor(s: string) {
+  switch (s) {
+    case 'Running': return 'default'
+    case 'Stopped': return 'secondary'
+    default: return 'secondary'
+  }
+}
 </script>
 
 <template>
@@ -47,8 +70,13 @@ const project = computed(() => store.get(projectId.value))
                 <Layers class="size-4 text-primary" />
                 {{ env.name }}
               </CardTitle>
-              <Badge v-if="env.isProduction" variant="destructive">production</Badge>
-              <Badge v-else variant="secondary">staging</Badge>
+              <div class="flex items-center gap-1">
+                <Badge v-if="env.isProduction" variant="destructive">production</Badge>
+                <Badge v-else variant="secondary">staging</Badge>
+                <Badge :variant="statusColor(env.clusterStatus ?? 'Unknown')">
+                  {{ env.clusterStatus ?? 'Unknown' }}
+                </Badge>
+              </div>
             </div>
             <CardDescription class="flex items-center gap-2 text-xs">
               <Globe class="size-3" />

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   Card,
   CardContent,
@@ -36,12 +37,6 @@ const description = ref('')
 const creating = ref(false)
 const deleting = ref<string | null>(null)
 const error = ref('')
-
-const statusColor: Record<string, string> = {
-  Running: 'bg-emerald-500/15 text-emerald-600',
-  Stopped: 'bg-amber-500/15 text-amber-600',
-  Unknown: 'bg-muted text-muted-foreground',
-}
 
 function openCreate() {
   editing.value = null
@@ -114,7 +109,7 @@ async function confirmDelete() {
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
         <p class="text-sm text-muted-foreground">
-          Each project is one Kubernetes cluster (kind). The cluster name = project ID (UUID v7).
+          Each project is a folder of environments. Every environment is a Kubernetes cluster (kind).
         </p>
       </div>
       <Button size="sm" @click="openCreate">
@@ -123,44 +118,49 @@ async function confirmDelete() {
     </div>
 
     <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-      <Card v-for="p in projects.projects" :key="p.id">
-        <CardHeader>
-          <div class="flex items-center justify-between gap-2">
-            <CardTitle class="flex items-center gap-2 text-base">
-              <FolderTree class="size-4 text-primary" />
-              {{ p.name }}
-            </CardTitle>
-            <Badge :class="statusColor[p.clusterStatus ?? 'Unknown']">
-              {{ p.clusterStatus ?? 'Unknown' }}
-            </Badge>
-          </div>
-          <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ p.description || '—' }}</CardDescription>
-        </CardHeader>
-        <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
-          <span class="font-mono">{{ p.id }}</span>
-          <div class="flex items-center gap-1">
-            <Button variant="ghost" size="sm" type="button" @click="openEdit(p)">
-              <Pencil class="size-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              class="text-destructive hover:text-destructive"
-              :disabled="deleting === p.id"
-              @click="requestDelete(p)"
-            >
-              <Loader2 v-if="deleting === p.id" class="size-3 animate-spin" />
-              <Trash2 v-else class="size-3" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <RouterLink
+        v-for="p in projects.projects"
+        :key="p.id"
+        :to="`/projects/${p.id}`"
+        class="block transition-transform hover:scale-[1.01]"
+      >
+        <Card>
+          <CardHeader>
+            <div class="flex items-center justify-between gap-2">
+              <CardTitle class="flex items-center gap-2 text-base">
+                <FolderTree class="size-4 text-primary" />
+                {{ p.name }}
+              </CardTitle>
+              <Badge variant="secondary">{{ p.envCount ?? p.environments.length }} env</Badge>
+            </div>
+            <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ p.description || '—' }}</CardDescription>
+          </CardHeader>
+          <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
+            <span class="font-mono">{{ p.id }}</span>
+            <div class="flex items-center gap-1">
+              <Button variant="ghost" size="sm" type="button" @click.stop="openEdit(p)">
+                <Pencil class="size-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                class="text-destructive hover:text-destructive"
+                :disabled="deleting === p.id"
+                @click.stop="requestDelete(p)"
+              >
+                <Loader2 v-if="deleting === p.id" class="size-3 animate-spin" />
+                <Trash2 v-else class="size-3" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </RouterLink>
     </div>
 
     <AppDialog v-model:open="dialogOpen" :title="editing ? 'Edit Project' : 'New Project'" :description="editing
-      ? 'Edit project name or description. The cluster name stays the project ID (UUID v7).'
-      : 'Create a new cluster. Only name and description are required.'">
+      ? 'Edit project name or description. Environments (and their clusters) are untouched.'
+      : 'Create a project folder. A default production environment with its own Kubernetes cluster is created automatically.'">
       <form id="p-form" class="grid gap-3" @submit.prevent="submit">
         <div class="grid gap-1.5">
           <Label for="p-name">Name</Label>
@@ -176,7 +176,7 @@ async function confirmDelete() {
         <Button type="submit" form="p-form" :disabled="creating || !name.trim()">
           <Loader2 v-if="creating" class="mr-1 size-4 animate-spin" />
           {{ creating
-            ? (editing ? 'Saving…' : 'Creating cluster…')
+            ? (editing ? 'Saving…' : 'Creating project…')
             : (editing ? 'Save Changes' : 'Create Project') }}
         </Button>
       </template>
