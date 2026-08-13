@@ -78,9 +78,9 @@ const form = reactive({
   basicAuthUser: '',
   basicAuthPass: '',
   replicasMode: 'fix' as 'fix' | 'range',
-  replicas: 1,
-  replicasMin: 1,
-  replicasMax: 1,
+  replicas: '1',
+  replicasMin: '1',
+  replicasMax: '1',
 })
 const saving = ref(false)
 const saveError = ref('')
@@ -112,9 +112,9 @@ function initForm() {
   form.basicAuthUser = s.basicAuthUser ?? ''
   form.basicAuthPass = s.basicAuthPass ?? ''
   form.replicasMode = s.replicasMode === 'range' ? 'range' : 'fix'
-  form.replicas = s.replicas ?? 1
-  form.replicasMin = s.replicasMin ?? 1
-  form.replicasMax = s.replicasMax ?? 1
+  form.replicas = String(s.replicas ?? 1)
+  form.replicasMin = String(s.replicasMin ?? 1)
+  form.replicasMax = String(s.replicasMax ?? 1)
 }
 watch(() => service.value?.id, () => { if (service.value) initForm() }, { immediate: true })
 
@@ -269,12 +269,14 @@ function preventNumberScroll(e: WheelEvent) {
   e.preventDefault()
 }
 
-// Sanitize a replica count: digits only, no leading zero, min 1.
-// Rejects "-", "e", "0" at the start, decimals, etc.
-function sanitizeReplicas(v: unknown): number {
-  const s = String(v ?? '').replace(/[^\d]/g, '') // strip anything non-digit (kills -, e, .)
-  if (!s) return 1
-  return Math.max(1, parseInt(s.replace(/^0+/, '') || '1', 10))
+// Sanitize a replica count string: digits only, no leading zeros (but keep
+// a lone "0" and empty string as-is so the user can clear/type freely).
+// The min-1 clamp happens at save time (and backend guards too).
+function sanitizeReplicas(v: unknown): string {
+  let s = String(v ?? '').replace(/[^\d]/g, '') // strip anything non-digit (kills -, e, .)
+  // strip leading zeros, but keep a single "0" (and empty) untouched
+  s = s.replace(/^0+(?=\d)/, '')
+  return s
 }
 
 // Hard guard: block invalid keys (-, e, E, ., ,, +) before they ever
@@ -287,13 +289,15 @@ function blockReplicaKeys(e: KeyboardEvent) {
 
 // Sync the DOM value immediately after sanitizing so the displayed text
 // can never show a rejected character (fixes the "-1" visible bug).
+// Stores the raw (possibly empty / lone "0") string — clamping to min 1
+// happens at save time.
 function onReplicasInput(e: Event, target: 'replicas' | 'replicasMin' | 'replicasMax') {
   const el = e.target as HTMLInputElement
   const clean = sanitizeReplicas(el.value)
-  form[target] = clean
+  form[target] = clean as never
   // Force the DOM to reflect the sanitized value right away — Vue's
   // :value binding won't re-render when the value didn't change.
-  el.value = String(clean)
+  el.value = clean
 }
 
 // Block paste of non-digit content (e.g. "-1", "3e4" from clipboard).
@@ -305,12 +309,12 @@ function blockReplicaPaste(e: ClipboardEvent) {
   }
   // Allow the paste but strip non-digits — the @input handler cleans up.
   const clean = sanitizeReplicas(text)
-  if (clean !== Number(text)) {
+  if (clean !== text) {
     e.preventDefault()
     const el = e.target as HTMLInputElement
     const start = el.selectionStart ?? el.value.length
     const end = el.selectionEnd ?? el.value.length
-    el.value = el.value.slice(0, start) + String(clean) + el.value.slice(end)
+    el.value = el.value.slice(0, start) + clean + el.value.slice(end)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
 }
