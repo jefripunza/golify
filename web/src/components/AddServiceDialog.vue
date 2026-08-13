@@ -11,13 +11,52 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AppWindow, Database, Wrench, ArrowLeft, Box, GitBranch, Loader2 } from '@lucide/vue'
+import { AppWindow, Database, Wrench, ArrowLeft, Box, GitBranch, Loader2, Check, X } from '@lucide/vue'
+import { authed } from '@/lib/api'
 
 const props = defineProps<{ open: boolean; loading?: boolean }>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
   create: [input: { name: string; type: 'application' | 'database' | 'tool'; catalog?: string; image?: string }]
 }>()
+
+// ─── Docker image existence check (debounced) ─────────────────────────────
+type ImageCheckState = 'idle' | 'checking' | 'valid' | 'invalid'
+const imageState = ref<ImageCheckState>('idle')
+const imageError = ref('')
+let checkTimer: ReturnType<typeof setTimeout> | null = null
+
+function resetImageCheck() {
+  if (checkTimer) clearTimeout(checkTimer)
+  checkTimer = null
+  imageState.value = 'idle'
+  imageError.value = ''
+}
+
+// Debounce 600ms after the user stops typing, then ask the backend
+// (which queries the Docker Registry HTTP API v2) whether the image
+// really exists and can be pulled.
+function onImageInput() {
+  if (checkTimer) clearTimeout(checkTimer)
+  const img = form.value.image.trim()
+  if (!img) {
+    resetImageCheck()
+    return
+  }
+  imageState.value = 'checking'
+  checkTimer = setTimeout(async () => {
+    try {
+      const res = await authed()
+        .post('api/v1/images/check', { json: { image: img } })
+        .json<{ exists: boolean; error?: string }>()
+      imageState.value = res.exists ? 'valid' : 'invalid'
+      imageError.value = res.error ?? 'Image not found'
+    } catch {
+      imageState.value = 'invalid'
+      imageError.value = 'Could not verify image'
+    }
+  }, 600)
+}
 
 // ─── Catalog data ─────────────────────────────────────────────────────────
 const DB_CATALOG = [
@@ -49,6 +88,7 @@ function reset() {
   selectedType.value = null
   selectedCatalog.value = null
   form.value = { name: '', image: '', repo: '' }
+  resetImageCheck()
 }
 
 // Reset to the root picker every time the dialog opens, so a previous
@@ -64,7 +104,7 @@ function back() {
 }
 
 const canSubmit = computed(() => {
-  if (step.value === 'app-docker') return form.value.name && form.value.image
+  if (step.value === 'app-docker') return form.value.name && form.value.image && imageState.value === 'valid'
   if (step.value === 'app-vcs') return form.value.name && form.value.repo
   return false
 })
@@ -176,7 +216,21 @@ function submit() {
         </div>
         <div class="grid gap-1.5">
           <Label>Docker image</Label>
-          <Input v-model="form.image" placeholder="nginx:latest" />
+          <div class="relative">
+            <Input v-model="form.image" placeholder="nginx:latest" @input="onImageInput" class="pr-9" />
+            <span v-if="imageState === 'checking'" class="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <Loader2 class="size-4 animate-spin text-muted-foreground" />
+            </span>
+            <span v-else-if="imageState === 'valid'" class="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <Check class="size-4 text-emerald-500" />
+            </span>
+            <span v-else-if="imageState === 'invalid'" class="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <X class="size-4 text-red-500" />
+            </span>
+          </div>
+          <p v-if="imageState === 'checking'" class="text-xs text-muted-foreground">Checking image…</p>
+          <p v-else-if="imageState === 'invalid'" class="text-xs text-red-500">{{ imageError }}</p>
+          <p v-else-if="imageState === 'valid'" class="text-xs text-emerald-500">Image found</p>
         </div>
       </div>
 

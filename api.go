@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -49,6 +51,16 @@ func registerAPI(r fiber.Router) {
 
 	// PaaS-style dashboard CRUD (JWT-protected)
 	registerProjects(v1)
+
+	// Docker image existence check (debounced from the Add Service form)
+	v1.Post("/images/check", requireAuth, func(c fiber.Ctx) error {
+		var body imageCheckRequest
+		if err := json.Unmarshal(c.Body(), &body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON body"})
+		}
+		res := checkImageExists(body.Image)
+		return c.JSON(res)
+	})
 
 	// standalone Domains list (JWT-protected)
 	registerDomains(v1)
