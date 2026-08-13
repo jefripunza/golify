@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProjectsStore } from '@/stores'
 import { getAuth } from '@/lib/api'
+import type { Service } from '@/lib/types'
 import {
   Play,
   Square,
@@ -34,7 +35,20 @@ const envId = computed(() => String(route.params.envId))
 const serviceId = computed(() => String(route.params.serviceId))
 const project = computed(() => store.get(projectId.value))
 const env = computed(() => store.getEnv(projectId.value, envId.value))
-const service = computed(() => store.getService(projectId.value, envId.value, serviceId.value))
+const service = computed(() => {
+  const real = store.getService(projectId.value, envId.value, serviceId.value)
+  if (real) return real
+  // Fallback to dummy services while backend service CRUD is not wired
+  return dummyServices.find((s) => s.id === serviceId.value) ?? null
+})
+
+// Dummy services (must mirror EnvDetailView) while the backend service
+// CRUD is not wired up yet.
+const dummyServices: Service[] = [
+  { id: 'svc-dummy-api', name: 'api', kind: 'container', image: 'example/api:latest', status: 'running', cpu: 2.4, memory: 128, ports: ['3000'] },
+  { id: 'svc-dummy-web', name: 'web', kind: 'container', image: 'example/web:latest', status: 'running', cpu: 1.1, memory: 64, ports: ['8080'] },
+  { id: 'svc-dummy-db', name: 'db', kind: 'container', image: 'postgres:16', status: 'stopped', cpu: 0, memory: 256, ports: ['5432'] },
+]
 
 const termEl = ref<HTMLDivElement | null>(null)
 let term: Terminal | null = null
@@ -149,9 +163,9 @@ function action(a: 'start' | 'stop' | 'restart') {
         <Layers class="inline size-3" /> {{ env.name }}
       </RouterLink>
       <span>/</span>
-      <span class="flex items-center gap-1">
+      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="flex items-center gap-1 hover:text-foreground">
         <Box class="inline size-3" /> {{ service.name }}
-      </span>
+      </RouterLink>
     </div>
 
     <header class="flex items-start justify-between gap-4">
