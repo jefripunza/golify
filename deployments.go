@@ -98,6 +98,7 @@ func registerDeployments(auth fiber.Router) {
 		// writes lines into a shared buffer that deployWS reads from.
 		go simulateDeploy(string(dep.ID), svc)
 
+		notify("deployment", "created", string(dep.ID))
 		return c.Status(201).JSON(dep)
 	})
 }
@@ -223,6 +224,8 @@ func markDeployDone(deployID, status string) {
 			db.Model(&Service{}).Where("id = ?", dep.ServiceID).Update("status", "error")
 		}
 	}
+	notify("deployment", "finished", deployID)
+	notify("service", "updated", string(dep.ServiceID))
 }
 
 // ─── WebSocket handlers ────────────────────────────────────────────────────

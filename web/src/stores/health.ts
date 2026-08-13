@@ -7,6 +7,7 @@ export const useHealth = defineStore('health', () => {
   const q = useQuery<{ status: string; app: string }, Error>({
     key: ['health'],
     query: () => http.get('api/v1/health').json<{ status: string; app: string }>(),
+    staleTime: 60_000, // avoid refetch on window focus / remount — health rarely changes
   })
   // Colada v1: `state` is a ComputedRef<{data,error,status}> — `q.state.value.data`.
   const data = computed(() => q.state.value.data ?? null)

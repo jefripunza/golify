@@ -144,6 +144,8 @@ func registerProjects(r fiber.Router) {
 		if err := db.Model(&env).Update("ip_internal", env.IPInternal).Error; err != nil {
 			log.Printf("[projects] save ip_internal failed: %v", err)
 		}
+		notify("project", "created", string(p.ID))
+		notify("environment", "created", string(env.ID))
 		return c.Status(201).JSON(fiber.Map{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"source_id": p.SourceID, "environments": []fiber.Map{{
@@ -246,6 +248,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Save(&p).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("project", "updated", id)
 		return c.JSON(p)
 	})
 
@@ -267,6 +270,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Delete(&Project{}, "id = ?", id).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("project", "deleted", id)
 		return c.JSON(fiber.Map{"deleted": id})
 	})
 
@@ -312,6 +316,7 @@ func registerProjects(r fiber.Router) {
 			db.Delete(&Environment{}, "id = ?", env.ID)
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
+		notify("environment", "created", string(env.ID))
 		return c.Status(201).JSON(fiber.Map{
 			"id": env.ID, "name": env.Name, "description": env.Description, "is_production": env.IsProduction,
 			"cluster_status": "Running", "services": []fiber.Map{},
@@ -345,6 +350,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Save(&env).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("environment", "updated", eid)
 		return c.JSON(fiber.Map{
 			"id": env.ID, "name": env.Name, "description": env.Description,
 			"is_production": env.IsProduction, "updated_at": env.UpdatedAt,
@@ -369,6 +375,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Delete(&Environment{}, "id = ?", eid).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("environment", "deleted", eid)
 		return c.JSON(fiber.Map{"deleted": eid})
 	})
 
@@ -419,6 +426,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Create(&s).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("service", "created", string(s.ID))
 		return c.Status(201).JSON(s)
 	})
 
@@ -449,6 +457,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Delete(&Service{}, "id = ?", sid).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("service", "deleted", sid)
 		return c.JSON(fiber.Map{"deleted": sid})
 	})
 
@@ -530,6 +539,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Save(&svc).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("service", "updated", sid)
 		return c.JSON(svc)
 	})
 
@@ -574,6 +584,7 @@ func registerProjects(r fiber.Router) {
 		if err := ensureSelfSignedCert(body.Host); err != nil {
 			log.Printf("[ssl] self-signed cert for %s: %v", body.Host, err)
 		}
+		notify("domain", "created", string(sd.ID))
 		return c.Status(201).JSON(sd)
 	})
 
@@ -582,6 +593,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Delete(&ServiceDomain{}, "id = ?", did).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("domain", "deleted", did)
 		return c.JSON(fiber.Map{"deleted": did})
 	})
 
@@ -622,6 +634,7 @@ func registerProjects(r fiber.Router) {
 		if err := db.Save(&sd).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		notify("domain", "updated", did)
 		return c.JSON(sd)
 	})
 

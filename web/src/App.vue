@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import AppToaster from '@/components/AppToaster.vue'
+import { startRealtime, stopRealtime } from '@/lib/realtime'
+
+onMounted(startRealtime)
+onBeforeUnmount(stopRealtime)
 </script>
 
 <template>

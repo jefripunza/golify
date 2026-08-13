@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Card,
@@ -27,9 +27,8 @@ const router = useRouter()
 onMounted(() => {
   void projects.refresh()
 })
-// periodic refresh so cluster status stays live
-const refreshTimer = setInterval(() => void projects.refresh(), 30_000)
-onUnmounted(() => clearInterval(refreshTimer))
+// NOTE: periodic 30s refresh REMOVED — realtime WS (/api/ws/realtime)
+// refetches the list whenever a project/env/service actually changes.
 
 // dialog state (create + edit)
 const dialogOpen = ref(false)

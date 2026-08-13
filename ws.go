@@ -115,6 +115,9 @@ func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 	case rel == "/analytic":
 		analyticHandler(ctx)
 		return true
+	case rel == "/realtime":
+		realtimeHandler(ctx)
+		return true
 	}
 	// /api/ws/terminal/server/:serverId — host terminal for a registered server
 	if serverID, ok := matchWSPath(rel, "/terminal/server/"); ok {

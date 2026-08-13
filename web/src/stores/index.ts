@@ -53,11 +53,17 @@ function useResourceList<T>(path: string, fallback: T[], map: (raw: any) => T) {
     }
   }
 
-  // Auto-fetch on mount + re-fetch whenever localStorage auth changes (login/logout).
+  // Auto-fetch on mount + re-fetch ONLY when the auth token actually changes
+  // (login/logout). Guarded against loops — the old version refetched on every
+  // reactive tick of authed().
+  let lastTok = ''
   watchEffect(() => {
-    // touch the auth key so reactivity re-runs on login/logout
     void authed()
-    fetchOnce()
+    const tok = getAuth()?.token ?? ''
+    if (tok !== lastTok) {
+      lastTok = tok
+      fetchOnce()
+    }
   })
 
   return { items, pending, error, refresh: fetchOnce }
@@ -189,22 +195,20 @@ export const useProjectsStore = defineStore('projects', () => {
     } catch (e) { error.value = e; raw.value = [] }
     finally { pending.value = false }
   }
-  watchEffect(() => { void authed(); fetchOnce() })
-
-  // Token-reactive refetch: a 5s poll re-reads auth (storage/cookie may
-  // have changed since mount) and refetches when a token appears or the
-  // raw list is empty while auth exists. SPA navigation never re-mounts
-  // the store, so this poll is the safety net that keeps lists alive.
-  let lastToken = ''
-  setInterval(async () => {
-    const auth = getAuth()
-    const tok = auth?.token ?? ''
-    const emptyButAuthed = raw.value.length === 0 && tok !== ''
-    if (tok !== lastToken || emptyButAuthed) {
-      lastToken = tok
-      await fetchOnce()
+  const lastTokenRef = { current: '' }
+  watchEffect(() => {
+    // touch the auth key so reactivity re-runs on login/logout — but guard
+    // against re-fetch loops: only refetch when the token actually changes.
+    void authed()
+    const tok = getAuth()?.token ?? ''
+    if (tok !== lastTokenRef.current) {
+      lastTokenRef.current = tok
+      fetchOnce()
     }
-  }, 5_000)
+  })
+
+  // NOTE: the old 5s polling loop is REMOVED — the realtime WS
+  // (/api/ws/realtime) now drives refetches when data actually changes.
 
   const projects = computed<Project[]>(() => raw.value.map(mapProject))
 
