@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { useProjectsStore } from '@/stores'
-import { Layers, Plus, Pencil, Trash2, Loader2, GitBranch } from '@lucide/vue'
+import { Layers, Plus, Pencil, Trash2, Loader2, GitBranch, Server } from '@lucide/vue'
 import AppDialog from '@/components/AppDialog.vue'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 import type { Environment } from '@/lib/types'
@@ -158,6 +158,10 @@ function statusColor(s: string) {
               </div>
             </div>
             <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ env.description || '—' }}</CardDescription>
+            <div v-if="env.ipInternal" class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Server class="size-3.5" />
+              <span class="font-mono">{{ env.ipInternal }}</span>
+            </div>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
             <span>{{ env.services.length ? env.services.length : 3 }} service(s)</span>

@@ -63,6 +63,7 @@ type Environment struct {
 	Name         string    `gorm:"size:255;not null" json:"name"`
 	Description  string    `gorm:"size:512;default:''" json:"description"`
 	IsProduction bool      `gorm:"not null;default:false" json:"is_production"`
+	IPInternal   string    `gorm:"size:64;default:''" json:"ip_internal"`
 	Domains      []Domain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
 	Services     []Service `gorm:"constraint:OnDelete:CASCADE" json:"services,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`

@@ -51,7 +51,9 @@ func registerProjects(r fiber.Router) {
 					domains = append(domains, fiber.Map{"id": d.ID, "host": d.Host})
 				}
 				envs = append(envs, fiber.Map{
-					"id": e.ID, "name": e.Name, "is_production": e.IsProduction,
+					"id": e.ID, "name": e.Name, "description": e.Description,
+					"is_production":  e.IsProduction,
+					"ip_internal":    e.IPInternal,
 					"cluster_status": kindClusterStatus(e.ID),
 					"services":       svcs, "domains": domains,
 					"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
@@ -95,10 +97,16 @@ func registerProjects(r fiber.Router) {
 			db.Delete(&Project{}, "id = ?", p.ID)
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
+		// capture the cluster's internal IP into the environment row
+		env.IPInternal = kindClusterIP(env.ID)
+		if err := db.Model(&env).Update("ip_internal", env.IPInternal).Error; err != nil {
+			log.Printf("[projects] save ip_internal failed: %v", err)
+		}
 		return c.Status(201).JSON(fiber.Map{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"source_id": p.SourceID, "environments": []fiber.Map{{
 				"id": env.ID, "name": env.Name, "is_production": true,
+				"ip_internal":    env.IPInternal,
 				"cluster_status": "Running", "services": []fiber.Map{},
 				"domains": []fiber.Map{}, "created_at": env.CreatedAt,
 				"updated_at": env.UpdatedAt,
@@ -132,7 +140,9 @@ func registerProjects(r fiber.Router) {
 				domains = append(domains, fiber.Map{"id": d.ID, "host": d.Host})
 			}
 			envs = append(envs, fiber.Map{
-				"id": e.ID, "name": e.Name, "is_production": e.IsProduction,
+				"id": e.ID, "name": e.Name, "description": e.Description,
+				"is_production":  e.IsProduction,
+				"ip_internal":    e.IPInternal,
 				"cluster_status": kindClusterStatus(e.ID),
 				"services":       svcs, "domains": domains,
 				"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,

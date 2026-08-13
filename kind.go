@@ -55,3 +55,23 @@ func kindClusterStatus(name string) string {
 	}
 	return "Stopped"
 }
+
+// kindClusterIP returns the internal IP of the control-plane node for a
+// kind cluster, or "" if the cluster is not reachable. Uses kubectl with
+// the cluster's kubeconfig context (kind-<name>). NOTE: with the Podman
+// provider the node name is "<name>-control-plane" (no "kind-" prefix),
+// so we look it up by label instead of hardcoding the node name.
+func kindClusterIP(name string) string {
+	cmd := exec.Command("kubectl", "get", "node",
+		"-l", "node-role.kubernetes.io/control-plane",
+		"-o", "jsonpath={.items[0].status.addresses[?(@.type==\"InternalIP\")].address}")
+	cmd.Env = kindProviderEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("[kind] get ip for %s failed: %v", name, err)
+		return ""
+	}
+	ip := strings.TrimSpace(string(out))
+	log.Printf("[kind] cluster %s internal IP = %s", name, ip)
+	return ip
+}

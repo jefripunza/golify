@@ -111,6 +111,8 @@ function mapEnv(e: any): Environment {
   return {
     id: String(e.id),
     name: e.name,
+    description: e.description ?? '',
+    ipInternal: e.ip_internal ?? '',
     isProduction: e.is_production,
     clusterStatus: e.cluster_status || 'Unknown',
     services: (e.services ?? []).map(mapSvc),
