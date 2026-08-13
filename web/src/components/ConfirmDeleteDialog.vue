@@ -59,7 +59,20 @@ function onOpenChange(open: boolean) {
       </DialogHeader>
 
       <div class="grid gap-1.5">
-        <Label for="confirm-delete">Type the name to confirm</Label>
+        <Label for="confirm-copy">Project name (copy from here)</Label>
+        <Input
+          id="confirm-copy"
+          :model-value="confirmText"
+          readonly
+          class="select-all font-mono"
+          tabindex="-1"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+        <p class="text-xs text-muted-foreground">Tap the field above to select all, then copy.</p>
+      </div>
+
+      <div class="grid gap-1.5">
+        <Label for="confirm-delete">Type or paste the name to confirm</Label>
         <Input
           id="confirm-delete"
           v-model="typed"
