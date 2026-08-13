@@ -297,6 +297,16 @@ function onReplicasKeyup(e: Event, target: 'replicas' | 'replicasMin' | 'replica
   if (el.value !== clean) el.value = clean
 }
 
+// Runs on blur: if the field was left empty (or sanitized to empty),
+// default it to 1 so the saved value is never empty/0.
+function onReplicasBlur(e: Event, target: 'replicas' | 'replicasMin' | 'replicasMax') {
+  const el = e.target as HTMLInputElement
+  const clean = sanitizeReplicas(el.value)
+  const v = clean === '' ? '1' : clean
+  form[target] = v as never
+  el.value = v
+}
+
 // Block paste of non-digit content (e.g. "-1", "3e4" from clipboard).
 function blockReplicaPaste(e: ClipboardEvent) {
   const text = e.clipboardData?.getData('text') ?? ''
@@ -716,6 +726,7 @@ const sectionIcons: Record<string, string> = {
                       @keydown="blockReplicaKeys"
                       @keyup="onReplicasKeyup($event, 'replicas')"
                       @paste="blockReplicaPaste"
+                      @blur="onReplicasBlur($event, 'replicas')"
                     />
                   </div>
                 </template>
@@ -734,6 +745,7 @@ const sectionIcons: Record<string, string> = {
                         @keydown="blockReplicaKeys"
                         @keyup="onReplicasKeyup($event, 'replicasMin')"
                         @paste="blockReplicaPaste"
+                        @blur="onReplicasBlur($event, 'replicasMin')"
                       />
                     </div>
                     <div class="grid gap-1.5">
@@ -749,6 +761,7 @@ const sectionIcons: Record<string, string> = {
                         @keydown="blockReplicaKeys"
                         @keyup="onReplicasKeyup($event, 'replicasMax')"
                         @paste="blockReplicaPaste"
+                        @blur="onReplicasBlur($event, 'replicasMax')"
                       />
                     </div>
                   </div>
