@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Boxes, Globe, Monitor, Server as ServerIcon } from '@lucide/vue'
-import { useServersStore } from '@/stores'
+import { useServersStore, useProjectsStore } from '@/stores'
 import { getAuth, setAuth, validateSession } from '@/lib/api'
 import { useRouter } from 'vue-router'
 
@@ -159,7 +159,6 @@ onMounted(async () => {
   connectAnalyticWS()
   fetchContainerCount()
   fetchDomainCount()
-  fetchClusterCount()
 })
 
 onBeforeUnmount(() => {
@@ -396,23 +395,13 @@ async function fetchDomainCount() {
 }
 
 // Total Cluster — total environments across all projects (each env = 1 cluster)
-const clusterCount = ref<number | null>(null)
-async function fetchClusterCount() {
-  try {
-    const auth = getAuth()
-    const res = await fetch('/api/v1/projects', {
-      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : {},
-    })
-    if (res.ok) {
-      const d = await res.json()
-      clusterCount.value = Array.isArray(d)
-        ? d.reduce((acc: number, p: any) => acc + (p.environments?.length ?? 0), 0)
-        : 0
-    }
-  } catch {
-    /* non-fatal */
-  }
-}
+// Computed from the shared projects store (already fetched by the store's
+// watchEffect) instead of a raw fetch — the old fetch caused a DOUBLE
+// /api/v1/projects hit on the dashboard.
+const clusterCount = computed<number>(() => {
+  const store = useProjectsStore()
+  return store.projects.reduce((acc: number, p: any) => acc + (p.environments?.length ?? 0), 0)
+})
 
 const totalServiceLabel = ref('0') // hardcoded — service milestone not built yet
 

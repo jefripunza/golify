@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Card,
@@ -23,12 +23,9 @@ import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 const projects = useProjectsStore()
 const router = useRouter()
 
-// refresh list when the view mounts (SPA navigation may skip watchEffect)
-onMounted(() => {
-  void projects.refresh()
-})
-// NOTE: periodic 30s refresh REMOVED — realtime WS (/api/ws/realtime)
-// refetches the list whenever a project/env/service actually changes.
+// NOTE: no onMounted refresh here — the store's watchEffect fetches once on
+// mount (token guard), and realtime WS (/api/ws/realtime) refetches whenever
+// data actually changes. Adding another refresh here caused double hits.
 
 // dialog state (create + edit)
 const dialogOpen = ref(false)
