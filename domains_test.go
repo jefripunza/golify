@@ -9,21 +9,24 @@ func TestNormalizeDomainSuffixValidation(t *testing.T) {
 		in      string
 		wantErr bool
 	}{
-		// valid
+		// valid — root domains only (Pak Jefri's rule)
 		{"example.com", false},
 		{"simtaru.online", false},
 		{"wajadi.online", false},
 		{"foo.co.id", false},
-		{"sub.example.com", false},
-		{"a.b.co.id", false},
-		{"example.xn--p1ai", false}, // punycode TLD (рф) — valid TLD
 		{"my-site.dev", false},
+		{"example.xn--p1ai", false}, // punycode TLD (рф) — valid TLD
 		// www ≡ apex — normalized to the same bare host
 		{"www.example.com", false},
 		{"WWW.SIMTARU.ONLINE", false},
 		{"https://www.sawang.tech/", false},
-		{"www.sub.example.com", false},
-		// invalid
+		// invalid — subdomains are NOT allowed (hard rule)
+		{"sub.example.com", true},  // subdomain rejected
+		{"a.b.co.id", true},        // subdomain of a co.id root rejected
+		{"www.sub.example.com", true}, // www + subdomain rejected
+		{"golify.sawang.tech", true},  // subdomain rejected
+		{"test.simtaru.online", true}, // subdomain rejected
+		// invalid — TLD / format
 		{"noservice.example", true},  // .example not a real TLD
 		{"foo.badexample", true},     // .badexample not a TLD
 		{"example.invalidtld", true}, // .invalidtld not a TLD

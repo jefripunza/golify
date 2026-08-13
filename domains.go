@@ -9,8 +9,7 @@ import (
 )
 
 // domainRegex matches a hostname: one or more labels, dot-separated.
-// Root domains (example.com) and subdomains (sub.example.com) are both
-// allowed. Final suffix is validated against domainSuffixes separately.
+// Only root domains are accepted (see normalizeDomain below).
 var domainRegex = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 
 // validDomainSuffix reports whether the final label(s) of host are a real
@@ -33,7 +32,9 @@ func validDomainSuffix(host string) bool {
 
 // normalizeDomain strips scheme/path/query, lowercases, strips a leading
 // "www." label (www.example.com ≡ example.com), returns bare host.
-// Accepts "example.com", "sub.example.com", "http://x.com", "https://sub.x.com/".
+// Accepts only ROOT domains — e.g. "example.com" — and REJECTS subdomains
+// (sub.example.com), per Pak Jefri's hard rule: no subdomains, TLD must be
+// valid. Bare suffixes (co.id) are also rejected.
 func normalizeDomain(raw string) (string, error) {
 	d := strings.TrimSpace(raw)
 	if d == "" {
@@ -56,13 +57,13 @@ func normalizeDomain(raw string) (string, error) {
 		return "", errors.New("domain required")
 	}
 	// structural validation: labels of [a-z0-9-], no leading/trailing '-',
-	// at least one dot (domain or subdomain), no consecutive dots.
+	// at least one dot, no consecutive dots.
 	if !domainRegex.MatchString(d) || strings.Contains(d, "..") {
-		return "", errors.New("invalid domain format (example: example.com or sub.example.com)")
+		return "", errors.New("invalid domain format (example: example.com)")
 	}
 	for _, label := range strings.Split(d, ".") {
 		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
-			return "", errors.New("invalid domain format (example: example.com or sub.example.com)")
+			return "", errors.New("invalid domain format (example: example.com)")
 		}
 	}
 	// reject hostnames whose final suffix is not a real domain suffix
@@ -70,6 +71,21 @@ func normalizeDomain(raw string) (string, error) {
 	// exist in the IANA/PSL-backed domainSuffixes list.
 	if !validDomainSuffix(d) {
 		return "", errors.New("invalid domain suffix (must end with a valid TLD like .com, .id, .online, .co.id)")
+	}
+	// HARD RULE (Pak Jefri): only ROOT domains are allowed — the host
+	// must be exactly ONE label + the longest matching domain suffix.
+	// Examples: example.com (1+1), foo.co.id (1 + co.id public suffix).
+	// Subdomains like sub.example.com or golify.sawang.tech are REJECTED.
+	labels := strings.Split(d, ".")
+	suffixLen := 0
+	for i := 0; i < len(labels); i++ {
+		if domainSuffixes[strings.Join(labels[i:], ".")] {
+			suffixLen = len(labels) - i
+			break
+		}
+	}
+	if suffixLen == 0 || len(labels)-suffixLen != 1 {
+		return "", errors.New("subdomains are not allowed — use a root domain only (example: example.com)")
 	}
 	return d, nil
 }
