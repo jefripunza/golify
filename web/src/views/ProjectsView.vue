@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { useRouter } from 'vue-router'
 import {
   Card,
   CardContent,
@@ -20,6 +20,7 @@ import { FolderTree, Plus, Pencil, Loader2, Trash2 } from '@lucide/vue'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 
 const projects = useProjectsStore()
+const router = useRouter()
 
 // refresh list when the view mounts (SPA navigation may skip watchEffect)
 onMounted(() => {
@@ -37,6 +38,11 @@ const description = ref('')
 const creating = ref(false)
 const deleting = ref<string | null>(null)
 const error = ref('')
+
+function openProject(p: Project) {
+  // navigate to the project's environments (list env page)
+  void router.push(`/project/${p.id}/environments`)
+}
 
 function openCreate() {
   editing.value = null
@@ -118,11 +124,11 @@ async function confirmDelete() {
     </div>
 
     <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-      <RouterLink
+      <div
         v-for="p in projects.projects"
         :key="p.id"
-        :to="`/project/${p.id}/environments`"
-        class="block transition-transform hover:scale-[1.01]"
+        class="cursor-pointer transition-transform hover:scale-[1.01]"
+        @click="openProject(p)"
       >
         <Card>
           <CardHeader>
@@ -154,7 +160,7 @@ async function confirmDelete() {
             </div>
           </CardContent>
         </Card>
-      </RouterLink>
+      </div>
     </div>
 
     <AppDialog v-model:open="dialogOpen" :title="editing ? 'Edit Project' : 'New Project'" :description="editing
