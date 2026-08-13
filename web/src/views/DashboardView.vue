@@ -158,6 +158,8 @@ onMounted(async () => {
   // If the token is dead, the WS handshake gets 401 → ws-4001 → redirect.
   connectAnalyticWS()
   fetchContainerCount()
+  fetchDomainCount()
+  fetchClusterCount()
 })
 
 onBeforeUnmount(() => {
@@ -321,9 +323,21 @@ const memFreeTotalLabel = computed(() => {
   return '—'
 })
 
+const memUsageLabel = computed(() => {
+  const m = sys.value?.mem
+  if (m?.total) return fmtSize(m.used)
+  return '—'
+})
+
 const diskFreeTotalLabel = computed(() => {
   const d = sys.value?.disk
   if (d?.total) return `${fmtSize(d.total - d.used)} / ${fmtSize(d.total)}`
+  return '—'
+})
+
+const diskUsageLabel = computed(() => {
+  const d = sys.value?.disk
+  if (d?.total) return fmtSize(d.used)
   return '—'
 })
 
@@ -360,6 +374,48 @@ const hostLabel = computed(() => {
 
 const pubIpLabel = computed(() => sys.value?.ipPublic || '…')
 
+// ── Non-gauge stats ───────────────────────────────────────────────────────
+// Row 1 (4 cards): Total Domain / Total Cluster / Total Service / Total Container
+// Row 2 (3 cards): OS / Host / IP Public
+
+// Total Domain — count of registered domains
+const domainCount = ref<number | null>(null)
+async function fetchDomainCount() {
+  try {
+    const auth = getAuth()
+    const res = await fetch('/api/v1/domains', {
+      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : {},
+    })
+    if (res.ok) {
+      const d = await res.json()
+      domainCount.value = Array.isArray(d) ? d.length : 0
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// Total Cluster — projects whose kind cluster is Running
+const clusterCount = ref<number | null>(null)
+async function fetchClusterCount() {
+  try {
+    const auth = getAuth()
+    const res = await fetch('/api/v1/projects', {
+      headers: auth?.token ? { Authorization: `Bearer ${auth.token}` } : {},
+    })
+    if (res.ok) {
+      const d = await res.json()
+      clusterCount.value = Array.isArray(d)
+        ? d.filter((p: any) => p.cluster_status === 'Running').length
+        : 0
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+const totalServiceLabel = ref('0') // hardcoded — service milestone not built yet
+
 interface StatItem {
   label: string
   value: string
@@ -369,25 +425,53 @@ interface StatItem {
 
 const stats = computed<StatItem[]>(() => [
   {
-    label: 'Total Container',
-    value: containerLabel.value,
-    sub: containerRuntime.value,
+    label: 'Total Domain',
+    value: domainCount.value === null ? '…' : `${domainCount.value}`,
+    sub: domainCount.value === null ? 'Loading…' : undefined,
+    icon: Globe,
+  },
+  {
+    label: 'Total Cluster',
+    value: clusterCount.value === null ? '…' : `${clusterCount.value}`,
+    sub: clusterCount.value === null ? 'Loading…' : undefined,
     icon: Boxes,
   },
   {
-    label: 'OS',
-    value: sys.value?.os || '…',
-    sub: sys.value?.host ? undefined : 'Loading host info…',
+    label: 'Total Service',
+    value: totalServiceLabel.value,
+    sub: 'not built yet',
+    icon: ServerIcon,
+  },
+  {
+    label: 'Total Container',
+    value: containerLabel.value,
+    sub: containerRuntime.value,
     icon: Monitor,
   },
-  { label: 'Host', value: hostLabel.value, icon: ServerIcon },
-  { label: 'IP Public', value: pubIpLabel.value, icon: Globe },
 ])
 
 const gauges = computed(() => [
-  { label: 'CPU', value: cpuPercent.value, big: cpuTotalLabel.value, color: '#58a6ff' },
-  { label: 'Memory', value: memPercent.value, big: memFreeTotalLabel.value, color: '#3fb950' },
-  { label: 'Disk', value: diskPercent.value, big: diskFreeTotalLabel.value, color: '#d29922' },
+  {
+    label: 'CPU',
+    value: cpuPercent.value,
+    big: cpuTotalLabel.value,
+    sub: `${cpuPercent.value}%`,
+    color: '#58a6ff',
+  },
+  {
+    label: 'Memory',
+    value: memPercent.value,
+    big: memUsageLabel.value,
+    sub: memFreeTotalLabel.value,
+    color: '#3fb950',
+  },
+  {
+    label: 'Disk',
+    value: diskPercent.value,
+    big: diskUsageLabel.value,
+    sub: diskFreeTotalLabel.value,
+    color: '#d29922',
+  },
 ])
 
 const wsBadge = computed(() =>
@@ -414,7 +498,8 @@ const wsBadge = computed(() =>
       </div>
     </header>
 
-    <div class="grid gap-4 md:grid-cols-4">
+    <!-- Row 1: 4 stat cards -->
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Card v-for="s in stats" :key="s.label">
         <CardContent class="flex items-center justify-between p-4">
           <div>
@@ -423,6 +508,38 @@ const wsBadge = computed(() =>
             <p v-if="s.sub" class="text-xs text-muted-foreground">{{ s.sub }}</p>
           </div>
           <component :is="s.icon" class="size-5 text-muted-foreground" />
+        </CardContent>
+      </Card>
+    </div>
+
+    <!-- Row 2: OS / Host / IP Public — 3 cards -->
+    <div class="grid gap-4 sm:grid-cols-3">
+      <Card>
+        <CardContent class="flex items-center justify-between p-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-muted-foreground">OS</p>
+            <p class="mt-1 text-2xl font-semibold">{{ sys?.os || '…' }}</p>
+            <p v-if="!sys?.os" class="text-xs text-muted-foreground">Loading host info…</p>
+          </div>
+          <Monitor class="size-5 text-muted-foreground" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="flex items-center justify-between p-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-muted-foreground">Host</p>
+            <p class="mt-1 text-2xl font-semibold">{{ hostLabel }}</p>
+          </div>
+          <ServerIcon class="size-5 text-muted-foreground" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="flex items-center justify-between p-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-muted-foreground">IP Public</p>
+            <p class="mt-1 text-2xl font-semibold">{{ pubIpLabel }}</p>
+          </div>
+          <Globe class="size-5 text-muted-foreground" />
         </CardContent>
       </Card>
     </div>
@@ -444,6 +561,7 @@ const wsBadge = computed(() =>
           <CardTitle class="text-2xl">
             {{ g.big }}
           </CardTitle>
+          <p v-if="g.sub" class="text-sm text-muted-foreground">{{ g.sub }}</p>
         </CardHeader>
         <CardContent>
           <!-- needle stays % — only the big number is actual value -->
