@@ -36,12 +36,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  X,
-  Search,
-  Copy,
-  Download,
-  RefreshCw,
-  Maximize2,
 } from '@lucide/vue'
 
 const route = useRoute()
@@ -439,7 +433,6 @@ watch(() => service.value?.status, (s) => {
   }
 })
 onBeforeUnmount(() => {
-  closeDeployLog()
   logWS?.close()
   logWS = null
   ws?.close()
@@ -513,9 +506,6 @@ const dummyDeployments: Deployment[] = [
 const deployments = ref<Deployment[]>([])
 const deploymentsLoading = ref(false)
 const deploymentsError = ref('')
-const activeDeployId = ref<string | null>(null) // row with live log open
-const deployLogLines = ref<string[]>([])
-let deployWS: WebSocket | null = null
 
 async function loadDeployments() {
   deploymentsLoading.value = true
@@ -531,117 +521,10 @@ async function loadDeployments() {
   }
 }
 
-// Open a deployment row → Coolify-style deployment log modal.
-// - running  → WS live stream (auto-closes when the deploy finishes)
-// - finished → fetch persisted log from the new detail endpoint
-const deployModal = ref(false)
-const deployModalDep = ref<Deployment | null>(null)
-const deployModalLoading = ref(false)
-const deploySearch = ref('')
-const deployFullscreen = ref(false)
-
+// Open a deployment row → navigate to the dedicated deployment log page.
 function openDeployLog(dep: Deployment) {
-  if (activeDeployId.value === dep.id) {
-    closeDeployLog()
-    return
-  }
-  closeDeployLog()
-  activeDeployId.value = dep.id
-  deployLogLines.value = []
-  deployModal.value = true
-  deployModalDep.value = dep
-
-  if (dep.status === 'running') {
-    // live stream over WS; close when finished
-    const auth = getAuth()
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${proto}//${location.host}/api/ws/deploy/${encodeURIComponent(dep.id)}?token=${encodeURIComponent(auth?.token ?? '')}`
-    try { deployWS = new WebSocket(url) } catch { deployWS = null }
-    if (!deployWS) {
-      deployLogLines.value = ['[WS not available]']
-      return
-    }
-    deployWS.onmessage = (ev) => {
-      deployLogLines.value = [...deployLogLines.value, String(ev.data)]
-    }
-    deployWS.onclose = () => {
-      // Deploy finished — refresh deployments list AND the store's service
-      // status (stopped → running) so Logs/Terminal gating unlocks.
-      setTimeout(async () => {
-        await store.refresh()
-        await loadDeployments()
-      }, 300)
-    }
-    deployWS.onerror = () => {
-      deployLogLines.value = [...deployLogLines.value, '[connection error]']
-    }
-  } else {
-    // finished — fetch the persisted log from the DB-backed endpoint
-    deployModalLoading.value = true
-    store.fetchDeployment(projectId.value, envId.value, serviceId.value, dep.id)
-      .then((full) => {
-        deployModalDep.value = full
-        deployLogLines.value = full.log ? full.log.split('\n') : []
-      })
-      .catch(() => { deployLogLines.value = ['[failed to load log]'] })
-      .finally(() => { deployModalLoading.value = false })
-  }
+  router.push(`/project/${projectId.value}/environment/${envId.value}/service/${serviceId.value}/deploy/${dep.id}`)
 }
-
-function closeDeployLog() {
-  deployWS?.close()
-  deployWS = null
-  activeDeployId.value = null
-  deployModal.value = false
-  deployModalDep.value = null
-  deploySearch.value = ''
-  deployFullscreen.value = false
-}
-
-// ─── deployment log modal helpers ─────────────────────────────────────────
-const deployLogBodyEl = ref<HTMLElement | null>(null)
-
-const filteredDeployLog = computed(() => {
-  const q = deploySearch.value.trim().toLowerCase()
-  if (!q) return deployLogLines.value
-  return deployLogLines.value.filter((l) => l.toLowerCase().includes(q))
-})
-
-function copyDeployLog() {
-  const text = deployLogLines.value.join('\n')
-  navigator.clipboard?.writeText(text).catch(() => {})
-}
-
-function downloadDeployLog() {
-  const text = deployLogLines.value.join('\n')
-  const blob = new Blob([text], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `deploy-${deployModalDep.value?.id ?? 'log'}.log`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function refreshDeployLog() {
-  const dep = deployModalDep.value
-  if (!dep) return
-  if (dep.status === 'running') return // WS already live
-  deployModalLoading.value = true
-  store.fetchDeployment(projectId.value, envId.value, serviceId.value, dep.id)
-    .then((full) => {
-      deployModalDep.value = full
-      deployLogLines.value = full.log ? full.log.split('\n') : []
-    })
-    .catch(() => { deployLogLines.value = [...deployLogLines.value, '[failed to reload log]'] })
-    .finally(() => { deployModalLoading.value = false })
-}
-
-// auto-scroll the log body to the bottom as new lines arrive
-watch(deployLogLines, () => {
-  const el = deployLogBodyEl.value
-  if (el) el.scrollTop = el.scrollHeight
-}, { flush: 'post' })
 
 function fmtDateTime(iso?: string): string {
   if (!iso) return '—'
@@ -1174,8 +1057,7 @@ const sectionIcons: Record<string, string> = {
                 {{ dep.status === 'running' ? 'Running' : dep.status === 'success' ? 'Success' : 'Failed' }}
               </span>
             </div>
-            <ChevronDown v-if="activeDeployId === dep.id" class="size-4 text-muted-foreground" />
-            <ChevronRight v-else class="size-4 text-muted-foreground" />
+            <ChevronRight class="size-4 text-muted-foreground" />
           </div>
           <div class="mt-2 grid gap-1 text-xs text-muted-foreground">
             <p><span class="font-medium text-foreground">Started:</span> {{ fmtDateTime(dep.startedAt) }} UTC</p>
@@ -1187,83 +1069,8 @@ const sectionIcons: Record<string, string> = {
               <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{{ dep.source }}</span>
             </p>
           </div>
-
-          <!-- Live log row (expanded) -->
-          <div v-if="activeDeployId === dep.id" class="mt-2 rounded bg-[#0e1117] p-2">
-            <pre class="max-h-64 overflow-auto font-mono text-[11px] leading-relaxed text-green-400"><code>{{ deployLogLines.join('\n') || 'Waiting for log output…' }}</code></pre>
-          </div>
         </div>
         <p v-if="!deployments.length" class="text-sm text-muted-foreground">No deployments yet.</p>
-      </div>
-    </div>
-
-    <!-- Deployment log modal (Coolify-style) -->
-    <div
-      v-if="deployModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 md:p-6"
-      @click.self="closeDeployLog"
-    >
-      <div
-        class="flex w-full flex-col overflow-hidden rounded-lg border bg-card shadow-2xl"
-        :class="deployFullscreen ? 'h-[96vh] max-w-none' : 'h-[80vh] max-w-3xl'"
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between border-b px-4 py-3">
-          <div>
-            <h3 class="text-sm font-semibold">Deployment Log</h3>
-            <p class="text-xs text-muted-foreground">
-              {{ deployModalDep?.id }}
-            </p>
-          </div>
-          <Button size="sm" variant="ghost" class="size-8" @click="closeDeployLog">
-            <X class="size-4" />
-          </Button>
-        </div>
-
-        <!-- Sub-header: status + toolbar -->
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
-          <p class="text-xs">
-            Deployment is
-            <span
-              class="font-medium"
-              :class="deployModalDep?.status === 'success' ? 'text-green-500' : deployModalDep?.status === 'failed' ? 'text-red-500' : 'text-yellow-500'"
-            >
-              {{ deployModalDep?.status === 'running' ? 'Running' : deployModalDep?.status === 'success' ? 'Finished' : 'Failed' }}
-            </span>
-            <span v-if="deployModalDep?.status !== 'running'" class="ml-2 text-muted-foreground">· {{ fmtDuration(deployModalDep?.startedAt, deployModalDep?.endedAt) }}</span>
-          </p>
-          <div class="flex items-center gap-1">
-            <div class="relative">
-              <Search class="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input v-model="deploySearch" placeholder="Find in logs" class="h-7 w-44 pl-7 text-xs" />
-            </div>
-            <Button size="icon" variant="ghost" class="size-7" title="Copy" @click="copyDeployLog">
-              <Copy class="size-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" class="size-7" title="Download" @click="downloadDeployLog">
-              <Download class="size-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" class="size-7" title="Refresh" @click="refreshDeployLog">
-              <RefreshCw class="size-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" class="size-7" :title="deployFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click="deployFullscreen = !deployFullscreen">
-              <Maximize2 class="size-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        <!-- Log body -->
-        <div class="flex-1 overflow-auto bg-[#0e1117] p-3 font-mono text-[11px] leading-relaxed text-gray-300" ref="deployLogBodyEl">
-          <div v-if="deployModalLoading" class="text-gray-500">Loading log…</div>
-          <template v-else>
-            <p v-for="(line, i) in filteredDeployLog" :key="i" class="whitespace-pre-wrap">
-              <span v-if="line.match(/^20\d\d-/)" class="text-gray-500">{{ line.slice(0, 26) }}</span>
-              <span v-if="line.match(/^20\d\d-/)" class="text-gray-300">{{ line.slice(26) }}</span>
-              <span v-else class="text-gray-300">{{ line }}</span>
-            </p>
-            <p v-if="!deployLogLines.length" class="text-gray-500">Waiting for log output…</p>
-          </template>
-        </div>
       </div>
     </div>
 

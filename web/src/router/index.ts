@@ -12,6 +12,7 @@ import ProjectsView from '@/views/ProjectsView.vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import EnvDetailView from '@/views/EnvDetailView.vue'
 import ServiceDetailView from '@/views/ServiceDetailView.vue'
+import DeployDetailView from '@/views/DeployDetailView.vue'
 import ServersView from '@/views/ServersView.vue'
 import ServerDetailView from '@/views/ServerDetailView.vue'
 import SourcesView from '@/views/SourcesView.vue'
@@ -59,6 +60,7 @@ const router = createRouter({
         { path: 'project/:projectId/environments', name: 'project-environments', component: ProjectDetailView, ...requireAuth() },
         { path: 'project/:projectId/environment/:envId/services', name: 'env-services', component: EnvDetailView, ...requireAuth() },
         { path: 'project/:projectId/environment/:envId/service/:serviceId', name: 'service-detail', component: ServiceDetailView, ...requireAuth() },
+        { path: 'project/:projectId/environment/:envId/service/:serviceId/deploy/:deployId', name: 'deploy-detail', component: DeployDetailView, ...requireAuth() },
 
         // Infrastructure
         { path: 'servers', name: 'servers', component: ServersView, ...requireAuth() },
