@@ -77,16 +77,18 @@ async function submit() {
   try {
     const isEdit = editingId.value !== null
     if (isEdit) {
-      const data = await authed().patch(`api/v1/domains/${editingId.value}`, { json: { host: parsed.data } }).json<any>()
-      const i = items.value.findIndex((d) => d.id === editingId.value)
-      if (i >= 0) items.value[i] = data
+      await authed().patch(`api/v1/domains/${editingId.value}`, { json: { host: parsed.data } }).json<any>()
     } else {
-      const data = await authed().post('api/v1/domains', { json: { host: parsed.data } }).json<any>()
-      items.value.unshift(data)
+      await authed().post('api/v1/domains', { json: { host: parsed.data } }).json<any>()
     }
+    // selalu refetch dari server — single source of truth
+    await load()
     dialogOpen.value = false
   } catch (e: any) {
-    error.value = e?.message || 'Failed to save domain'
+    const msg = e?.message || 'Failed to save domain'
+    // 409/400 dari BE: tampilkan pesan, biarkan dialog terbuka
+    error.value = msg.includes('409') ? 'Domain already exists' : msg
+    await load() // sinkronkan tabel dengan server
   } finally {
     saving.value = false
   }

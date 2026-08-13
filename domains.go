@@ -105,7 +105,11 @@ func registerDomains(r fiber.Router) {
 		if count > 0 {
 			return c.Status(409).JSON(fiber.Map{"error": "domain already exists"})
 		}
-		row := Domain{Host: host, EnvironmentID: body.EnvironmentID}
+		row := Domain{Host: host}
+		if body.EnvironmentID != "" {
+			envID := UUID(body.EnvironmentID)
+			row.EnvironmentID = &envID
+		}
 		if err := db.Create(&row).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -137,7 +141,12 @@ func registerDomains(r fiber.Router) {
 			return c.Status(409).JSON(fiber.Map{"error": "domain already exists"})
 		}
 		row.Host = host
-		row.EnvironmentID = body.EnvironmentID
+		if body.EnvironmentID == "" {
+			row.EnvironmentID = nil
+		} else {
+			envID := UUID(body.EnvironmentID)
+			row.EnvironmentID = &envID
+		}
 		if err := db.Save(&row).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}

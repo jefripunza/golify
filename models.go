@@ -90,10 +90,10 @@ type Service struct {
 // environment (environment_id empty) and later linked to one; the proxy
 // gate only serves the SPA when the environment has a service.
 type Domain struct {
-	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
-	EnvironmentID UUID      `gorm:"default:'';index;size:36" json:"environment_id"`
-	Host          string    `gorm:"size:255;not null;uniqueIndex" json:"host"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            UUID       `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID *UUID      `gorm:"index;size:36" json:"environment_id"`
+	Host          string     `gorm:"size:255;not null;uniqueIndex" json:"host"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // ─── Infrastructure / Security models (menus Servers..Teams) ──────────────
