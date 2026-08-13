@@ -39,6 +39,7 @@ import {
   Copy,
   Download,
   RefreshCw,
+  Maximize,
 } from '@lucide/vue'
 
 const route = useRoute()
@@ -65,7 +66,22 @@ const sections = [
   { id: 'danger', label: 'Danger Zone', icon: 'alert' },
 ]
 const activeSection = ref('general')
-const activeTab = ref('configuration')
+// Tab state is driven by the URL query (?tab=...) so a page refresh keeps
+// the user on the same tab.
+const activeTab = ref<string>(typeof route.query.tab === 'string' && ['configuration', 'deployments', 'logs', 'terminal'].includes(route.query.tab) ? route.query.tab : 'configuration')
+
+// keep the query in sync when the tab changes (replace, no history spam)
+watch(activeTab, (tab) => {
+  router.replace({ query: { ...route.query, tab } })
+})
+
+// also respond to back/forward navigation that changes ?tab=
+watch(() => route.query.tab, (q) => {
+  if (typeof q === 'string' && q !== activeTab.value && ['configuration', 'deployments', 'logs', 'terminal'].includes(q)) {
+    activeTab.value = q
+  }
+})
+
 const topTabs = [
   { id: 'configuration', label: 'Configuration', icon: Box },
   { id: 'deployments', label: 'Deployments', icon: Activity },
@@ -456,11 +472,13 @@ interface LogContainer {
   ws: WebSocket | null
   loading: boolean
   error: string
+  linesLimit: number   // Lines selector (100/200/500/1000)
 }
 
 const containers = ref<LogContainer[]>([])
 const containersLoading = ref(false)
 const logSearch = ref('')
+const linesOptions = [100, 200, 500, 1000]
 
 // fetch replica containers for the service (podman ps, filtered by golify-<name>)
 async function loadContainers() {
@@ -488,6 +506,7 @@ async function loadContainers() {
         ws: prev?.ws ?? null,
         loading: false,
         error: prev?.error ?? '',
+        linesLimit: prev?.linesLimit ?? 100,
       }
     })
     // close WS for containers that disappeared
@@ -555,6 +574,12 @@ function closeAllLogWS() {
 const filteredLines = (c: LogContainer) =>
   logSearch.value ? c.lines.filter(l => l.toLowerCase().includes(logSearch.value.toLowerCase())) : c.lines
 
+// apply the Lines selector: show only the last N lines of the filtered output
+const visibleLines = (c: LogContainer) => {
+  const all = filteredLines(c)
+  return all.slice(-c.linesLimit)
+}
+
 function copyContainerLog(c: LogContainer) {
   navigator.clipboard?.writeText(c.lines.join('\n')).catch(() => {})
 }
@@ -569,6 +594,15 @@ function downloadContainerLog(c: LogContainer) {
 function refreshContainerLog(c: LogContainer) {
   c.lines = []
   connectContainerLogs(c)
+}
+function fullscreenContainerLog(c: LogContainer) {
+  const el = document.getElementById(`log-${c.id}`)
+  if (!el) return
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {})
+  } else {
+    el.requestFullscreen?.().catch(() => {})
+  }
 }
 
 // ─── Danger Zone: delete service (cascade) ────────────────────────────────
@@ -1220,29 +1254,43 @@ const sectionIcons: Record<string, string> = {
           </button>
 
           <!-- accordion body: one WS per container -->
-          <div v-if="c.expanded" class="border-t bg-muted/30">
+          <div v-if="c.expanded" :id="`log-${c.id}`" class="border-t bg-muted/30">
             <div class="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
-              <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span class="inline-block size-1.5 rounded-full" :class="c.ws ? 'bg-green-500' : 'bg-gray-400'" />
-                {{ c.ws ? 'Live' : 'Disconnected' }}
-              </span>
+              <!-- Lines selector -->
+              <select
+                v-model.number="c.linesLimit"
+                class="h-7 rounded border bg-background px-1.5 font-mono text-xs outline-none"
+                title="Lines"
+              >
+                <option v-for="n in linesOptions" :key="n" :value="n">Lines: {{ n }}</option>
+              </select>
+
+              <!-- Find in logs -->
               <input
                 v-model="logSearch"
                 placeholder="Find in logs"
                 class="ml-auto h-7 w-40 rounded border bg-background px-2 font-mono text-xs outline-none"
               />
+
+              <!-- toolbar icons (Coolify-style) -->
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Refresh" @click="refreshContainerLog(c)">
+                <RefreshCw class="size-3.5" />
+              </button>
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Stream (pause/resume)" @click="c.ws ? (c.ws.close(), c.ws = null) : connectContainerLogs(c)">
+                <Play class="size-3.5" />
+              </button>
               <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Copy" @click="copyContainerLog(c)">
                 <Copy class="size-3.5" />
               </button>
               <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Download" @click="downloadContainerLog(c)">
                 <Download class="size-3.5" />
               </button>
-              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Refresh" @click="refreshContainerLog(c)">
-                <RefreshCw class="size-3.5" />
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Fullscreen" @click="fullscreenContainerLog(c)">
+                <Maximize class="size-3.5" />
               </button>
             </div>
             <div v-if="c.loading" class="px-3 py-2 text-xs text-muted-foreground">Connecting…</div>
-            <pre v-else class="max-h-80 overflow-auto p-3 font-mono text-xs leading-relaxed"><code>{{ filteredLines(c).join('\n') || c.error || 'No log output yet.' }}</code></pre>
+            <pre v-else class="max-h-80 overflow-auto p-3 font-mono text-xs leading-relaxed"><code>{{ visibleLines(c).join('\n') || c.error || 'No log output yet.' }}</code></pre>
           </div>
         </div>
       </div>
