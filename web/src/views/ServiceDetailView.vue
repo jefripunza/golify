@@ -80,9 +80,7 @@ const form = reactive({
   image: '',
   imageTag: '',
   dockerOptions: '',
-  portsExposes: '',
   portMappings: '',
-  networkAliases: '',
   basicAuthEnable: false,
   basicAuthUser: '',
   basicAuthPass: '',
@@ -99,9 +97,7 @@ function initForm() {
   form.image = s.image ?? ''
   form.imageTag = s.imageTag ?? 'latest'
   form.dockerOptions = s.dockerOptions ?? ''
-  form.portsExposes = s.portsExposes ?? ''
   form.portMappings = (s.portMappings ?? []).join(', ')
-  form.networkAliases = (s.networkAliases ?? []).join(', ')
   form.basicAuthEnable = s.basicAuthEnable ?? false
   form.basicAuthUser = s.basicAuthUser ?? ''
   form.basicAuthPass = s.basicAuthPass ?? ''
@@ -119,9 +115,7 @@ async function saveGeneral() {
       image: form.image,
       image_tag: form.imageTag,
       docker_options: form.dockerOptions,
-      ports_exposes: form.portsExposes,
       port_mappings: form.portMappings.split(',').map((s) => s.trim()).filter(Boolean),
-      network_aliases: form.networkAliases.split(',').map((s) => s.trim()).filter(Boolean),
       basic_auth_enable: form.basicAuthEnable,
       basic_auth_user: form.basicAuthUser,
       basic_auth_pass: form.basicAuthPass,
@@ -334,133 +328,132 @@ const sectionIcons: Record<string, string> = {
 
       <!-- Main content -->
       <div class="min-w-0">
-        <div class="mx-auto w-full max-w-3xl">
         <template v-if="activeSection === 'general'">
-              <div class="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <h2 class="text-lg font-semibold">General</h2>
-                  <p class="text-xs text-muted-foreground">General configuration for your application.</p>
-                </div>
-                <Button size="sm" :disabled="saving" @click="saveGeneral">
-                  <Save v-if="!saving" class="mr-1 size-4" />
-                  <Loader2 v-else class="mr-1 size-4 animate-spin" />
-                  {{ saveOk ? 'Saved ✓' : 'Save' }}
-                </Button>
-              </div>
-              <p v-if="saveError" class="mb-2 text-sm text-destructive">{{ saveError }}</p>
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">General</h2>
+              <p class="text-xs text-muted-foreground">General configuration for your application.</p>
+            </div>
+            <Button size="sm" :disabled="saving" @click="saveGeneral">
+              <Save v-if="!saving" class="mr-1 size-4" />
+              <Loader2 v-else class="mr-1 size-4 animate-spin" />
+              {{ saveOk ? 'Saved ✓' : 'Save' }}
+            </Button>
+          </div>
+          <p v-if="saveError" class="mb-2 text-sm text-destructive">{{ saveError }}</p>
 
-              <Card>
-                <CardHeader class="pb-2">
-                  <CardDescription>Name *</CardDescription>
+          <div class="grid grid-cols-12 gap-3">
+            <!-- Basic Info (col 6) -->
+            <Card class="col-span-12 md:col-span-6">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-base">Basic Info</CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <div class="grid gap-1.5">
+                  <Label>Name *</Label>
                   <Input v-model="form.name" placeholder="Service name" />
-                </CardHeader>
-                <CardHeader class="pb-2">
-                  <CardDescription>Description</CardDescription>
+                </div>
+                <div class="grid gap-1.5">
+                  <Label>Description</Label>
                   <Input v-model="form.description" placeholder="Optional description" />
-                </CardHeader>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-              <!-- Domains -->
-              <Card class="mt-3">
-                <CardHeader class="pb-2">
-                  <CardDescription class="flex items-center gap-1">
-                    Domains <Info class="size-3" />
-                  </CardDescription>
-                  <div class="flex flex-col gap-2 sm:flex-row">
-                    <Input v-model="newDomain.host" placeholder="app.example.com" class="flex-1" />
-                    <div class="flex gap-2">
-                      <Input v-model="newDomain.port" placeholder="80" class="w-20" />
-                      <Button size="sm" variant="outline" @click="addDomain"><Plus class="size-4" /></Button>
-                    </div>
-                  </div>
-                  <p v-if="domainError" class="text-xs text-destructive">{{ domainError }}</p>
-                </CardHeader>
-                <CardContent class="grid gap-1.5">
-                  <div v-for="d in service.domains ?? []" :key="d.id" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
-                    <span class="truncate font-mono">{{ d.host }}</span>
-                    <span class="flex items-center gap-2">
-                      <Badge variant="secondary">→ :{{ d.port }}</Badge>
-                      <button class="text-destructive hover:text-destructive/80" @click="removeDomain(d.id)"><Trash2 class="size-3.5" /></button>
-                    </span>
-                  </div>
-                  <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains yet — each domain can point to a different port.</p>
-                </CardContent>
-              </Card>
+            <!-- Docker Registry (col 6) -->
+            <Card class="col-span-12 md:col-span-6">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-base">Docker Registry</CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <div class="grid gap-1.5">
+                  <Label>Docker Image</Label>
+                  <Input v-model="form.image" placeholder="jefriherditriyanto/openclaw-for-9router" />
+                </div>
+                <div class="grid gap-1.5">
+                  <Label class="flex items-center gap-1">Docker Image Tag or Hash <Info class="size-3 text-muted-foreground" /></Label>
+                  <Input v-model="form.imageTag" placeholder="0.0.9" />
+                </div>
+              </CardContent>
+            </Card>
 
-              <!-- Docker Registry -->
-              <Card class="mt-3">
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-base">Docker Registry</CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-3">
-                  <div class="grid gap-1.5">
-                    <Label>Docker Image</Label>
-                    <Input v-model="form.image" placeholder="jefriherditriyanto/openclaw-for-9router" />
+            <!-- Domains (col 6) -->
+            <Card class="col-span-12 md:col-span-6">
+              <CardHeader class="pb-2">
+                <CardDescription class="flex items-center gap-1">
+                  Domains <Info class="size-3" />
+                </CardDescription>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <Input v-model="newDomain.host" placeholder="app.example.com" class="flex-1" />
+                  <div class="flex gap-2">
+                    <Input v-model="newDomain.port" placeholder="80" class="w-20" />
+                    <Button size="sm" variant="outline" @click="addDomain"><Plus class="size-4" /></Button>
                   </div>
-                  <div class="grid gap-1.5">
-                    <Label class="flex items-center gap-1">Docker Image Tag or Hash <Info class="size-3 text-muted-foreground" /></Label>
-                    <Input v-model="form.imageTag" placeholder="0.0.9" />
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+                <p v-if="domainError" class="text-xs text-destructive">{{ domainError }}</p>
+              </CardHeader>
+              <CardContent class="grid gap-1.5">
+                <div v-for="d in service.domains ?? []" :key="d.id" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                  <span class="truncate font-mono">{{ d.host }}</span>
+                  <span class="flex items-center gap-2">
+                    <Badge variant="secondary">→ :{{ d.port }}</Badge>
+                    <button class="text-destructive hover:text-destructive/80" @click="removeDomain(d.id)"><Trash2 class="size-3.5" /></button>
+                  </span>
+                </div>
+                <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains yet — each domain can point to a different port.</p>
+              </CardContent>
+            </Card>
 
-              <!-- Build -->
-              <Card class="mt-3">
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-base">Build</CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-3">
-                  <div class="grid gap-1.5">
-                    <Label class="flex items-center gap-1">Custom Docker Options <Info class="size-3 text-muted-foreground" /></Label>
-                    <Input v-model="form.dockerOptions" placeholder="--privileged" />
-                  </div>
-                </CardContent>
-              </Card>
+            <!-- Network (col 6) — only Port Mappings remains -->
+            <Card class="col-span-12 md:col-span-6">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-base">Network</CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <div class="grid gap-1.5">
+                  <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
+                  <Input v-model="form.portMappings" placeholder="3000:3000 (comma separated)" />
+                </div>
+              </CardContent>
+            </Card>
 
-              <!-- Network -->
-              <Card class="mt-3">
-                <CardHeader class="pb-2">
-                  <CardTitle class="text-base">Network</CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-3">
-                  <div class="grid gap-1.5">
-                    <Label class="flex items-center gap-1">Ports Exposes <Info class="size-3 text-muted-foreground" /></Label>
-                    <Input v-model="form.portsExposes" placeholder="8080" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
-                    <Input v-model="form.portMappings" placeholder="3000:3000 (comma separated)" />
-                  </div>
-                  <div class="grid gap-1.5">
-                    <Label class="flex items-center gap-1">Network Aliases <Info class="size-3 text-muted-foreground" /></Label>
-                    <Input v-model="form.networkAliases" placeholder="alias1, alias2" />
-                  </div>
-                </CardContent>
-              </Card>
+            <!-- Build (col 12) -->
+            <Card class="col-span-12">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-base">Build</CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <div class="grid gap-1.5">
+                  <Label class="flex items-center gap-1">Custom Docker Options <Info class="size-3 text-muted-foreground" /></Label>
+                  <Input v-model="form.dockerOptions" placeholder="--privileged" />
+                </div>
+              </CardContent>
+            </Card>
 
-              <!-- HTTP Basic Authentication -->
-              <Card class="mt-3">
-                <CardHeader class="pb-2">
-                  <CardTitle class="flex items-center gap-2 text-base">HTTP Basic Authentication <Info class="size-3 text-muted-foreground" /></CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-3">
-                  <label class="flex items-center gap-2 text-sm">
-                    <input v-model="form.basicAuthEnable" type="checkbox" class="size-4 accent-primary" />
-                    <span>Enable</span>
-                  </label>
-                  <template v-if="form.basicAuthEnable">
-                    <div class="grid gap-1.5">
-                      <Label>Username *</Label>
-                      <Input v-model="form.basicAuthUser" placeholder="admin" />
-                    </div>
-                    <div class="grid gap-1.5">
-                      <Label>Password *</Label>
-                      <Input v-model="form.basicAuthPass" type="password" placeholder="••••••" />
-                    </div>
-                  </template>
-                </CardContent>
-              </Card>
-            </template>
+            <!-- HTTP Basic Authentication (col 12) -->
+            <Card class="col-span-12">
+              <CardHeader class="pb-2">
+                <CardTitle class="flex items-center gap-2 text-base">HTTP Basic Authentication <Info class="size-3 text-muted-foreground" /></CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <label class="flex items-center gap-2 text-sm">
+                  <input v-model="form.basicAuthEnable" type="checkbox" class="size-4 accent-primary" />
+                  <span>Enable</span>
+                </label>
+                <template v-if="form.basicAuthEnable">
+                  <div class="grid gap-1.5">
+                    <Label>Username *</Label>
+                    <Input v-model="form.basicAuthUser" placeholder="admin" />
+                  </div>
+                  <div class="grid gap-1.5">
+                    <Label>Password *</Label>
+                    <Input v-model="form.basicAuthPass" type="password" placeholder="••••••" />
+                  </div>
+                </template>
+              </CardContent>
+            </Card>
+          </div>
+        </template>
 
             <template v-else-if="activeSection === 'danger'">
               <Card>
@@ -482,7 +475,6 @@ const sectionIcons: Record<string, string> = {
                 </CardHeader>
               </Card>
             </template>
-          </div>
           </div>
         </div>
 
