@@ -159,7 +159,7 @@ function statusColor(s: string) {
             </div>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{{ env.services.length ? env.services.length : 3 }} service(s)</span>
+            <span>{{ env.services.length }} service(s)</span>
             <div class="flex items-center gap-1">
               <Button variant="ghost" size="sm" type="button" @click.stop="openEdit(env)">
                 <Pencil class="size-3" />
