@@ -33,12 +33,10 @@ func seedProjects(db *gorm.DB) {
 
 	sawang := Project{Name: "sawang.tech-website", Description: "Company website & landing pages", SourceID: "src_github_org"}
 	sawangEnv := Environment{Name: "production", IsProduction: true}
-	sawangEnv.Domains = []Domain{{Host: "sawang.tech"}, {Host: "www.sawang.tech"}}
 	sawang.Envs = []Environment{sawangEnv}
 
 	golify := Project{Name: "golify", Description: "Self-hosted PaaS-style dashboard (this project)", SourceID: "src_github_org"}
 	golifyEnv := Environment{Name: "production", IsProduction: true}
-	golifyEnv.Domains = []Domain{{Host: "golify.sawang.tech"}}
 	golify.Envs = []Environment{golifyEnv}
 
 	hindsight := Project{Name: "hindsight-agent-memory", Description: "Second brain memory retrieval for agents", SourceID: "src_github_org"}
@@ -116,7 +114,7 @@ func seedVariables(db *gorm.DB) {
 		return
 	}
 	rows := []SharedVariable{
-		{Key: "GOLIFY_DOMAIN", Value: "golify.sawang.tech", IsSecret: false, Scope: "global"},
+		{Key: "GOLIFY_DOMAIN", Value: "golify.example.com", IsSecret: false, Scope: "global"},
 		{Key: "JWT_SIGN_KEY", Value: "<runtime-crypto-rand-32-byte>", IsSecret: true, Scope: "global"},
 		{Key: "DB_PATH", Value: "/app/data/golify.db", IsSecret: false, Scope: "global"},
 		{Key: "CLOUDFLARE_TUNNEL_ID", Value: "9c46bad2-7ed3-4d8e-bd44-...", IsSecret: true, Scope: "global"},
