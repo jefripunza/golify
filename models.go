@@ -16,6 +16,7 @@ func (m *Project) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) 
 func (m *Environment) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) }
 func (m *Service) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *ServiceDomain) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
+func (m *ServiceNetwork) BeforeCreate(tx *gorm.DB) error { return fillID(&m.ID) }
 func (m *Domain) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Server) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Source) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
@@ -92,17 +93,18 @@ type Service struct {
 	BasicAuthUser   string   `gorm:"size:255;default:''" json:"basic_auth_user"`
 	BasicAuthPass   string   `gorm:"size:255;default:''" json:"basic_auth_pass"`
 	// Replicas: fix (single count) or range (min/max, autoscaling)
-	ReplicasMode string          `gorm:"size:16;default:'fix'" json:"replicas_mode"` // fix | range
-	Replicas     int             `gorm:"default:1" json:"replicas"`
-	ReplicasMin  int             `gorm:"default:1" json:"replicas_min"`
-	ReplicasMax  int             `gorm:"default:1" json:"replicas_max"`
-	Status       string          `gorm:"size:32;not null;default:'stopped'" json:"status"`
-	CPU          float64         `gorm:"default:0" json:"cpu"`
-	Memory       int64           `gorm:"default:0" json:"memory"` // MB
-	Ports        []string        `gorm:"serializer:json" json:"ports"`
-	Domains      []ServiceDomain `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ReplicasMode string           `gorm:"size:16;default:'fix'" json:"replicas_mode"` // fix | range
+	Replicas     int              `gorm:"default:1" json:"replicas"`
+	ReplicasMin  int              `gorm:"default:1" json:"replicas_min"`
+	ReplicasMax  int              `gorm:"default:1" json:"replicas_max"`
+	Status       string           `gorm:"size:32;not null;default:'stopped'" json:"status"`
+	CPU          float64          `gorm:"default:0" json:"cpu"`
+	Memory       int64            `gorm:"default:0" json:"memory"` // MB
+	Ports        []string         `gorm:"serializer:json" json:"ports"`
+	Domains      []ServiceDomain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
+	Networks     []ServiceNetwork `gorm:"constraint:OnDelete:CASCADE" json:"networks,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
 // ServiceDomain is a domain/subdomain attached to a single Service,
@@ -113,6 +115,16 @@ type ServiceDomain struct {
 	Host      string    `gorm:"size:255;not null" json:"host"`    // e.g. app.example.com
 	Port      string    `gorm:"size:16;default:'80'" json:"port"` // target port on the service
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// ServiceNetwork is a port mapping attached to a single Service
+// (host port → container port), stored in the service_networks table.
+type ServiceNetwork struct {
+	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID     UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	HostPort      string    `gorm:"size:16;not null" json:"host_port"`        // e.g. 3000
+	ContainerPort string    `gorm:"size:16;default:''" json:"container_port"` // e.g. 3000
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // Domain is a hostname attached to an Environment. It is also the single

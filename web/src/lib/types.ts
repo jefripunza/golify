@@ -13,6 +13,12 @@ export interface ServiceDomain {
   port: string
 }
 
+export interface ServiceNetwork {
+  id: ID
+  hostPort: string
+  containerPort: string
+}
+
 export interface Service {
   id: ID
   name: string
@@ -41,6 +47,7 @@ export interface Service {
   memory: number // MB
   ports: string[]
   domains?: ServiceDomain[]
+  networks?: ServiceNetwork[]
   updatedAt: string // ISO
 }
 

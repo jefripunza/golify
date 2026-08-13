@@ -26,7 +26,7 @@ func registerProjects(r fiber.Router) {
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs.Services.Domains").Preload("Envs.Domains").
+		if err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Domains").
 			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -46,7 +46,6 @@ func registerProjects(r fiber.Router) {
 						"description":       s.Description,
 						"docker_options":    s.DockerOptions,
 						"ports_exposes":     s.PortsExposes,
-						"port_mappings":     s.PortMappings,
 						"network_aliases":   s.NetworkAliases,
 						"basic_auth_enable": s.BasicAuthEnable,
 						"basic_auth_user":   s.BasicAuthUser,
@@ -64,6 +63,13 @@ func registerProjects(r fiber.Router) {
 								ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
 							}
 							return ds
+						}(),
+						"networks": func() []fiber.Map {
+							ns := make([]fiber.Map, 0, len(s.Networks))
+							for _, n := range s.Networks {
+								ns = append(ns, fiber.Map{"id": n.ID, "host_port": n.HostPort, "container_port": n.ContainerPort})
+							}
+							return ns
 						}(),
 					})
 				}
@@ -137,7 +143,7 @@ func registerProjects(r fiber.Router) {
 
 	auth.Get("/:id", func(c fiber.Ctx) error {
 		var p Project
-		err := db.Preload("Envs.Services.Domains").Preload("Envs.Domains").
+		err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Domains").
 			First(&p, "id = ?", c.Params("id")).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
@@ -157,7 +163,6 @@ func registerProjects(r fiber.Router) {
 					"description":       s.Description,
 					"docker_options":    s.DockerOptions,
 					"ports_exposes":     s.PortsExposes,
-					"port_mappings":     s.PortMappings,
 					"network_aliases":   s.NetworkAliases,
 					"basic_auth_enable": s.BasicAuthEnable,
 					"basic_auth_user":   s.BasicAuthUser,
@@ -174,6 +179,13 @@ func registerProjects(r fiber.Router) {
 							ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
 						}
 						return ds
+					}(),
+					"networks": func() []fiber.Map {
+						ns := make([]fiber.Map, 0, len(s.Networks))
+						for _, n := range s.Networks {
+							ns = append(ns, fiber.Map{"id": n.ID, "host_port": n.HostPort, "container_port": n.ContainerPort})
+						}
+						return ns
 					}(),
 				})
 			}
@@ -522,6 +534,102 @@ func registerProjects(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": did})
+	})
+
+	// PATCH domain (edit host/port)
+	auth.Patch("/:projectId/environments/:envId/services/:serviceId/domains/:domainId", func(c fiber.Ctx) error {
+		did := c.Params("domainId")
+		var sd ServiceDomain
+		if err := db.First(&sd, "id = ?", did).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "domain not found"})
+		}
+		var body struct {
+			Host *string `json:"host"`
+			Port *string `json:"port"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
+		}
+		if body.Host != nil {
+			if *body.Host == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "host required"})
+			}
+			sd.Host = *body.Host
+		}
+		if body.Port != nil {
+			if *body.Port == "" {
+				*body.Port = "80"
+			}
+			sd.Port = *body.Port
+		}
+		if err := db.Save(&sd).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(sd)
+	})
+
+	// ─── Service networks (port mappings, service_networks table) ──────────
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/networks", func(c fiber.Ctx) error {
+		var rows []ServiceNetwork
+		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("host_port asc").Find(&rows).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(rows)
+	})
+
+	auth.Post("/:projectId/environments/:envId/services/:serviceId/networks", func(c fiber.Ctx) error {
+		var body struct {
+			HostPort      string `json:"host_port"`
+			ContainerPort string `json:"container_port"`
+		}
+		if err := c.Bind().JSON(&body); err != nil || body.HostPort == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "host_port required"})
+		}
+		sn := ServiceNetwork{
+			ServiceID:     c.Params("serviceId"),
+			HostPort:      body.HostPort,
+			ContainerPort: body.ContainerPort,
+		}
+		if err := db.Create(&sn).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(sn)
+	})
+
+	auth.Patch("/:projectId/environments/:envId/services/:serviceId/networks/:networkId", func(c fiber.Ctx) error {
+		nid := c.Params("networkId")
+		var sn ServiceNetwork
+		if err := db.First(&sn, "id = ?", nid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "network not found"})
+		}
+		var body struct {
+			HostPort      *string `json:"host_port"`
+			ContainerPort *string `json:"container_port"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
+		}
+		if body.HostPort != nil {
+			if *body.HostPort == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "host_port required"})
+			}
+			sn.HostPort = *body.HostPort
+		}
+		if body.ContainerPort != nil {
+			sn.ContainerPort = *body.ContainerPort
+		}
+		if err := db.Save(&sn).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(sn)
+	})
+
+	auth.Delete("/:projectId/environments/:envId/services/:serviceId/networks/:networkId", func(c fiber.Ctx) error {
+		nid := c.Params("networkId")
+		if err := db.Delete(&ServiceNetwork{}, "id = ?", nid).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": nid})
 	})
 
 	// ─── Start / Stop / Restart a service (status switch) ─────────────────

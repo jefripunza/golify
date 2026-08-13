@@ -27,8 +27,8 @@ import {
   FolderTree,
   ScrollText,
   Activity,
-  Globe,
   Plus,
+  Pencil,
   Trash2,
   Save,
   Loader2,
@@ -52,15 +52,10 @@ const sections = [
   { id: 'envvars', label: 'Environment Variables', icon: 'vars' },
   { id: 'storage', label: 'Persistent Storage', icon: 'disk' },
   { id: 'servers', label: 'Servers', icon: 'server' },
-  { id: 'scheduled', label: 'Scheduled Tasks', icon: 'clock' },
   { id: 'webhooks', label: 'Webhooks', icon: 'webhook' },
-  { id: 'preview', label: 'Preview Deployments', icon: 'eye' },
   { id: 'healthcheck', label: 'Healthcheck', icon: 'heart' },
-  { id: 'rollback', label: 'Rollback', icon: 'undo' },
   { id: 'limits', label: 'Resource Limits', icon: 'gauge' },
-  { id: 'resops', label: 'Resource Operations', icon: 'activity' },
   { id: 'metrics', label: 'Metrics', icon: 'chart' },
-  { id: 'tags', label: 'Tags', icon: 'tag' },
   { id: 'danger', label: 'Danger Zone', icon: 'alert' },
 ]
 const activeSection = ref('general')
@@ -70,7 +65,6 @@ const topTabs = [
   { id: 'deployments', label: 'Deployments', icon: Activity },
   { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'terminal', label: 'Terminal', icon: Box },
-  { id: 'links', label: 'Links', icon: Globe },
 ]
 
 // ─── General form state ───────────────────────────────────────────────────
@@ -80,7 +74,6 @@ const form = reactive({
   image: '',
   imageTag: 'latest',
   dockerOptions: '',
-  portMappings: '',
   basicAuthEnable: false,
   basicAuthUser: '',
   basicAuthPass: '',
@@ -98,9 +91,6 @@ const saveOk = ref(false)
 function splitImageRef(ref: string): { image: string; tag: string } {
   const r = (ref || '').trim()
   if (!r) return { image: '', tag: 'latest' }
-  // Registry with port (e.g. localhost:5000/nginx) — the first segment
-  // before "/" may contain ":" so only the LAST colon before a "/"-less
-  // tail is a tag separator.
   const lastColon = r.lastIndexOf(':')
   const lastSlash = r.lastIndexOf('/')
   if (lastColon > lastSlash && lastColon > 0) {
@@ -118,7 +108,6 @@ function initForm() {
   form.image = image
   form.imageTag = s.imageTag && s.imageTag !== 'latest' ? s.imageTag : tag
   form.dockerOptions = s.dockerOptions ?? ''
-  form.portMappings = (s.portMappings ?? []).join(', ')
   form.basicAuthEnable = s.basicAuthEnable ?? false
   form.basicAuthUser = s.basicAuthUser ?? ''
   form.basicAuthPass = s.basicAuthPass ?? ''
@@ -146,7 +135,6 @@ async function saveGeneral() {
       image: fullImageRef(),
       image_tag: form.imageTag.trim() || 'latest',
       docker_options: form.dockerOptions,
-      port_mappings: form.portMappings.split(',').map((s) => s.trim()).filter(Boolean),
       basic_auth_enable: form.basicAuthEnable,
       basic_auth_user: form.basicAuthUser,
       basic_auth_pass: form.basicAuthPass,
@@ -181,39 +169,64 @@ function availableRootDomains(): string[] {
 // ─── Service domains (subdomain + root domain + port → host) ──────────────
 const newDomain = reactive({ subdomain: '', port: '80' })
 const domainError = ref('')
+const editingDomainId = ref<string | null>(null)
 function buildDomainHost(): string {
   const sub = newDomain.subdomain.trim().replace(/^\.+/, '')
   const root = selectedRootDomain.value.trim().replace(/^\.+/, '')
   if (!root) return sub
   return sub ? `${sub}.${root}` : root
 }
-async function addDomain() {
+async function addOrUpdateDomain() {
   const host = buildDomainHost()
   if (!host) {
     domainError.value = 'Fill the subdomain or pick a root domain first.'
     return
   }
   domainError.value = ''
+  const port = newDomain.port.trim() || '80'
   try {
-    await store.addServiceDomain(projectId.value, envId.value, serviceId.value, host, newDomain.port.trim() || '80')
-    newDomain.subdomain = ''
-    newDomain.port = '80'
+    if (editingDomainId.value) {
+      await store.updateServiceDomain(projectId.value, envId.value, serviceId.value, editingDomainId.value, { host, port })
+    } else {
+      await store.addServiceDomain(projectId.value, envId.value, serviceId.value, host, port)
+    }
+    resetDomainForm()
   } catch (e: any) {
-    domainError.value = e?.message || 'Failed to add domain'
+    domainError.value = e?.message || 'Failed to save domain'
   }
+}
+function editDomain(d: { id: string; host: string; port: string }) {
+  editingDomainId.value = d.id
+  // Split host into subdomain + root: first label is subdomain, rest is root.
+  const parts = d.host.split('.')
+  if (parts.length >= 2) {
+    newDomain.subdomain = parts[0]
+    selectedRootDomain.value = parts.slice(1).join('.')
+  } else {
+    newDomain.subdomain = ''
+    selectedRootDomain.value = d.host
+  }
+  newDomain.port = d.port
+}
+function resetDomainForm() {
+  editingDomainId.value = null
+  newDomain.subdomain = ''
+  newDomain.port = '80'
 }
 async function removeDomain(did: string) {
   try {
     await store.removeServiceDomain(projectId.value, envId.value, serviceId.value, did)
+    if (editingDomainId.value === did) resetDomainForm()
   } catch (e: any) {
     domainError.value = e?.message || 'Failed to remove domain'
   }
 }
 
-// ─── Network port mappings (2 fields + add button) ────────────────────────
+// ─── Service networks (port mappings, service_networks table) ─────────────
 const newMapping = reactive({ from: '', to: '' })
 const mappingError = ref('')
-function addMapping() {
+const editingNetworkId = ref<string | null>(null)
+async function addOrUpdateMapping() {
   const from = newMapping.from.trim()
   const to = newMapping.to.trim()
   if (!from) {
@@ -221,20 +234,39 @@ function addMapping() {
     return
   }
   mappingError.value = ''
-  const entry = to ? `${from}:${to}` : from
-  const existing = form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)
-  if (existing.includes(entry)) {
-    mappingError.value = 'Mapping already exists.'
-    return
+  try {
+    if (editingNetworkId.value) {
+      await store.updateServiceNetwork(projectId.value, envId.value, serviceId.value, editingNetworkId.value, { host_port: from, container_port: to })
+    } else {
+      await store.addServiceNetwork(projectId.value, envId.value, serviceId.value, from, to)
+    }
+    resetMappingForm()
+  } catch (e: any) {
+    mappingError.value = e?.message || 'Failed to save port mapping'
   }
-  existing.push(entry)
-  form.portMappings = existing.join(', ')
+}
+function editMapping(n: { id: string; hostPort: string; containerPort: string }) {
+  editingNetworkId.value = n.id
+  newMapping.from = n.hostPort
+  newMapping.to = n.containerPort
+}
+function resetMappingForm() {
+  editingNetworkId.value = null
   newMapping.from = ''
   newMapping.to = ''
 }
-function removeMapping(entry: string) {
-  const existing = form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)
-  form.portMappings = existing.filter((m) => m !== entry).join(', ')
+async function removeMapping(nid: string) {
+  try {
+    await store.removeServiceNetwork(projectId.value, envId.value, serviceId.value, nid)
+    if (editingNetworkId.value === nid) resetMappingForm()
+  } catch (e: any) {
+    mappingError.value = e?.message || 'Failed to remove port mapping'
+  }
+}
+
+// Prevent number input value change on scroll (wheel) — CSS hides the spinners.
+function preventNumberScroll(e: WheelEvent) {
+  e.preventDefault()
 }
 
 // ─── Status + actions ─────────────────────────────────────────────────────
@@ -470,23 +502,32 @@ const sectionIcons: Record<string, string> = {
                   Domains <Info class="size-3" />
                 </CardDescription>
                 <div class="flex flex-col gap-2">
-                  <div class="flex flex-col gap-2 sm:flex-row">
+                  <div class="flex gap-2">
                     <Input v-model="newDomain.subdomain" placeholder="subdomain" class="flex-1" />
                     <select
                       v-model="selectedRootDomain"
-                      class="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      class="h-9 w-40 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="">— domain —</option>
                       <option v-for="d in availableRootDomains()" :key="d" :value="d">{{ d }}</option>
                     </select>
-                  </div>
-                  <div class="flex gap-2">
                     <Input v-model="newDomain.port" placeholder="80" class="w-20" />
-                    <Button size="sm" variant="outline" @click="addDomain"><Plus class="size-4" /> Add</Button>
                   </div>
-                  <p class="text-xs text-muted-foreground">
-                    Preview: <span class="font-mono">{{ buildDomainHost() || '—' }}</span>
-                  </p>
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="text-xs text-muted-foreground">
+                      Preview: <span class="font-mono">{{ buildDomainHost() || '—' }}</span>
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      @click="addOrUpdateDomain"
+                      class="shrink-0"
+                    >
+                      <Plus v-if="!editingDomainId" class="mr-1 size-4" />
+                      <Save v-else class="mr-1 size-4" />
+                      {{ editingDomainId ? 'Update' : 'Add' }}
+                    </Button>
+                  </div>
                 </div>
                 <p v-if="domainError" class="text-xs text-destructive">{{ domainError }}</p>
               </CardHeader>
@@ -495,6 +536,7 @@ const sectionIcons: Record<string, string> = {
                   <span class="truncate font-mono">{{ d.host }}</span>
                   <span class="flex items-center gap-2">
                     <Badge variant="secondary">→ :{{ d.port }}</Badge>
+                    <button class="text-muted-foreground hover:text-foreground" @click="editDomain(d)"><Pencil class="size-3.5" /></button>
                     <button class="text-destructive hover:text-destructive/80" @click="removeDomain(d.id)"><Trash2 class="size-3.5" /></button>
                   </span>
                 </div>
@@ -509,19 +551,29 @@ const sectionIcons: Record<string, string> = {
               </CardHeader>
               <CardContent class="grid gap-3">
                 <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
-                <div class="flex flex-col gap-2 sm:flex-row">
+                <div class="flex gap-2">
                   <Input v-model="newMapping.from" placeholder="host port (3000)" class="flex-1" />
-                  <div class="flex gap-2">
-                    <Input v-model="newMapping.to" placeholder="container port (3000)" class="flex-1" />
-                    <Button size="sm" variant="outline" @click="addMapping"><Plus class="size-4" /> Add</Button>
-                  </div>
+                  <Input v-model="newMapping.to" placeholder="container port (3000)" class="flex-1" />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    @click="addOrUpdateMapping"
+                    class="shrink-0"
+                  >
+                    <Plus v-if="!editingNetworkId" class="mr-1 size-4" />
+                    <Save v-else class="mr-1 size-4" />
+                    {{ editingNetworkId ? 'Update' : 'Add' }}
+                  </Button>
                 </div>
                 <p v-if="mappingError" class="text-xs text-destructive">{{ mappingError }}</p>
-                <div v-for="m in form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)" :key="m" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
-                  <span class="truncate font-mono">{{ m }}</span>
-                  <button class="text-destructive hover:text-destructive/80" @click="removeMapping(m)"><Trash2 class="size-3.5" /></button>
+                <div v-for="n in service.networks ?? []" :key="n.id" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                  <span class="truncate font-mono">{{ n.containerPort ? `${n.hostPort}:${n.containerPort}` : n.hostPort }}</span>
+                  <span class="flex items-center gap-2">
+                    <button class="text-muted-foreground hover:text-foreground" @click="editMapping(n)"><Pencil class="size-3.5" /></button>
+                    <button class="text-destructive hover:text-destructive/80" @click="removeMapping(n.id)"><Trash2 class="size-3.5" /></button>
+                  </span>
                 </div>
-                <p v-if="!form.portMappings.split(',').map((s) => s.trim()).filter(Boolean).length" class="text-xs text-muted-foreground">No port mappings yet.</p>
+                <p v-if="!(service.networks ?? []).length" class="text-xs text-muted-foreground">No port mappings yet.</p>
               </CardContent>
             </Card>
 
@@ -586,18 +638,18 @@ const sectionIcons: Record<string, string> = {
                 <template v-if="form.replicasMode === 'fix'">
                   <div class="grid gap-1.5">
                     <Label>Replicas *</Label>
-                    <Input v-model.number="form.replicas" type="number" min="1" placeholder="1" />
+                    <Input v-model.number="form.replicas" type="number" min="1" placeholder="1" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
                   </div>
                 </template>
                 <template v-else>
                   <div class="grid grid-cols-2 gap-3">
                     <div class="grid gap-1.5">
                       <Label>Min *</Label>
-                      <Input v-model.number="form.replicasMin" type="number" min="1" placeholder="1" />
+                      <Input v-model.number="form.replicasMin" type="number" min="1" placeholder="1" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
                     </div>
                     <div class="grid gap-1.5">
                       <Label>Max *</Label>
-                      <Input v-model.number="form.replicasMax" type="number" min="1" placeholder="5" />
+                      <Input v-model.number="form.replicasMax" type="number" min="1" placeholder="5" class="number-input-no-spin" @wheel.prevent="preventNumberScroll" />
                     </div>
                   </div>
                 </template>
@@ -657,25 +709,18 @@ const sectionIcons: Record<string, string> = {
         </CardContent>
       </Card>
     </div>
-
-    <!-- Links -->
-    <div v-else-if="activeTab === 'links'">
-      <Card>
-        <CardHeader><CardTitle>Links</CardTitle><CardDescription>Open the service's public links.</CardDescription></CardHeader>
-        <CardContent class="grid gap-1.5">
-          <a
-            v-for="d in service.domains ?? []"
-            :key="d.id"
-            :href="`https://${d.host}`"
-            target="_blank"
-            rel="noopener"
-            class="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-primary hover:underline"
-          >
-            <Globe class="size-4" /> {{ d.host }} → :{{ d.port }}
-          </a>
-          <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains configured yet.</p>
-        </CardContent>
-      </Card>
-    </div>
   </div>
 </template>
+
+<style scoped>
+/* Hide number input spinners (Chrome/Safari/Edge + Firefox) */
+.number-input-no-spin::-webkit-outer-spin-button,
+.number-input-no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.number-input-no-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+</style>

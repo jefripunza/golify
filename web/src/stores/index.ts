@@ -146,6 +146,7 @@ function mapSvc(s: any): Service {
     memory: s.memory,
     ports: s.ports ?? [],
     domains: (s.domains ?? []).map((d: any) => ({ id: String(d.id), host: d.host, port: d.port })),
+    networks: (s.networks ?? []).map((n: any) => ({ id: String(n.id), hostPort: n.host_port, containerPort: n.container_port })),
     updatedAt: s.updated_at,
   }
 }
@@ -273,6 +274,46 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.domains = (s.domains ?? []).filter((d) => d.id !== domainId)
   }
 
+  async function updateServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string, patch: { host: string; port: string }) {
+    const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains/${domainId}`, {
+      json: patch,
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s && s.domains) {
+      const i = s.domains.findIndex((d) => d.id === domainId)
+      if (i >= 0) s.domains[i] = { id: domainId, host: updated.host, port: updated.port }
+    }
+    return updated
+  }
+
+  // ─── Service networks (port mappings) ───────────────────────────────────
+  async function addServiceNetwork(projectId: string, envId: string, serviceId: string, hostPort: string, containerPort: string) {
+    const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks`, {
+      json: { host_port: hostPort, container_port: containerPort },
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) s.networks = [...(s.networks ?? []), { id: String(created.id), hostPort: created.host_port, containerPort: created.container_port }]
+    return created
+  }
+
+  async function updateServiceNetwork(projectId: string, envId: string, serviceId: string, networkId: string, patch: { host_port: string; container_port: string }) {
+    const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks/${networkId}`, {
+      json: patch,
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s && s.networks) {
+      const i = s.networks.findIndex((n) => n.id === networkId)
+      if (i >= 0) s.networks[i] = { id: networkId, hostPort: updated.host_port, containerPort: updated.container_port }
+    }
+    return updated
+  }
+
+  async function removeServiceNetwork(projectId: string, envId: string, serviceId: string, networkId: string) {
+    await authed().delete(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/networks/${networkId}`).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) s.networks = (s.networks ?? []).filter((n) => n.id !== networkId)
+  }
+
   // ─── Root domains (for the subdomain dropdown) ──────────────────────────
   const rootDomains = ref<string[]>([])
   async function fetchRootDomains() {
@@ -307,7 +348,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, removeServiceDomain, rootDomains, fetchRootDomains, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, rootDomains, fetchRootDomains, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────
