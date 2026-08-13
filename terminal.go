@@ -90,7 +90,7 @@ func runShellOverWS(conn *websocket.Conn, cmd *exec.Cmd) {
 		return
 	}
 	if err := cmd.Start(); err != nil {
-		conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31mfailed: "+err.Error()+"\x1b[0m\r\n"))
+		writeWS(conn, []byte("\r\n\x1b[31mfailed: "+err.Error()+"\x1b[0m\r\n"))
 		return
 	}
 
@@ -115,6 +115,6 @@ func runShellOverWS(conn *websocket.Conn, cmd *exec.Cmd) {
 	}()
 
 	cmd.Wait()
-	conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[33m[process exited]\x1b[0m\r\n"))
+	writeWS(conn, []byte("\r\n\x1b[33m[process exited]\x1b[0m\r\n"))
 	wg.Wait()
 }

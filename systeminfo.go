@@ -258,7 +258,7 @@ func sendAnalyticFrame(conn *websocket.Conn) bool {
 	if err != nil {
 		return false
 	}
-	if err := conn.WriteMessage(websocket.TextMessage, b); err != nil {
+	if err := writeWS(conn, b); err != nil {
 		return false
 	}
 	return true

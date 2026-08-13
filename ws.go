@@ -60,7 +60,7 @@ func streamHandler(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		if err := cmd.Start(); err != nil {
-			conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31mfailed: "+err.Error()+"\x1b[0m\r\n"))
+			writeWS(conn, []byte("\r\n\x1b[31mfailed: "+err.Error()+"\x1b[0m\r\n"))
 			return
 		}
 
@@ -85,7 +85,10 @@ func streamHandler(ctx *fasthttp.RequestCtx) {
 		}()
 
 		cmd.Wait()
-		conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[33m[process exited]\x1b[0m\r\n"))
+		// Use the SAME lock as wsWriter so this write never races with
+		// io.Copy above (previously a bare WriteMessage → panic:
+		// "concurrent write to websocket connection" killed the process).
+		writeWS(conn, []byte("\r\n\x1b[33m[process exited]\x1b[0m\r\n"))
 		wg.Wait()
 	})
 }
@@ -172,19 +175,27 @@ func buildExecCmd(sid string) *exec.Cmd {
 
 type wsWriter struct {
 	conn *websocket.Conn
-	mu   sync.Mutex
 }
 
-func (w *wsWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+// writeWS serializes ALL writes to a ws conn. wsWriter and any other
+// writer (e.g. "[process exited]" after cmd.Wait) must go through this —
+// fasthttp/websocket panics on concurrent WriteMessage calls.
+func writeWS(conn *websocket.Conn, p []byte) error {
+	wsmu.Lock()
+	defer wsmu.Unlock()
 	// WriteMessage panics if the conn is closed underneath us — catch it.
 	defer func() {
 		if r := recover(); r != nil {
 			// ignore: client disconnected
 		}
 	}()
-	if err := w.conn.WriteMessage(websocket.TextMessage, p); err != nil {
+	return conn.WriteMessage(websocket.TextMessage, p)
+}
+
+var wsmu sync.Mutex
+
+func (w *wsWriter) Write(p []byte) (int, error) {
+	if err := writeWS(w.conn, p); err != nil {
 		return 0, err
 	}
 	return len(p), nil
