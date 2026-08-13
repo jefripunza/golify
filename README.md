@@ -1,137 +1,167 @@
-# golify
+# Golify
 
-Self-hosted push notification server — Vue 3 SPA + Go (Fiber v3) backend with embedded frontend, JWT auth, GORM/SQLite storage.
+**Self-hosted PaaS-style control plane** — manage domains, projects (Kubernetes clusters), servers, sources, S3 storages, keys, API keys, and teams from a single dashboard.
 
-## Stack
+- **Frontend:** Vue 3 SPA (Vite + Tailwind CSS v4 + shadcn-vue + tweakcn)
+- **Backend:** Go (Fiber v3) with embedded frontend → single binary
+- **Storage:** SQLite (GORM), JWT auth, WebSocket live metrics
+
+---
+
+## ✨ Features
+
+| Area | Description |
+|------|-------------|
+| **Dashboard** | Live system metrics (CPU per-core chart, memory, disk, network) streamed over WebSocket · gauge cards · container/domain/cluster counts |
+| **Domains** | Register and manage root domains (auto-strip scheme, duplicate detection) |
+| **Projects** | Project = Kubernetes cluster (kind), created on demand, live status |
+| **Servers** | Server inventory with details |
+| **Sources** | Connect and manage source repositories |
+| **S3 Storages** | Object storage registrations |
+| **Keys / API Keys** | Shared variables, secrets, and scoped API keys |
+| **Teams** | Team management |
+| **Auth** | JWT (7-day expiry), onboarding-first flow, dark mode, remember-login |
+
+---
+
+## 🧱 Stack
 
 ### Frontend (`web/`)
 
-Initialized from official [`create-vue`](https://github.com/vuejs/create-vue) — **no AI-generated scaffolding**.
+Initialized from the official [`create-vue`](https://github.com/vuejs/create-vue) scaffolding — **no AI-generated boilerplate**.
 
 - **Vue 3** + TypeScript + Vue Router + Pinia
-- **Tailwind CSS v4** (via `@tailwindcss/vite`)
-- **shadcn-vue** (Reka base, Vega preset) + **tweakcn** registry (Modern Minimal theme)
-- **ky** — HTTP client (`src/lib/api.ts`)
-- **Pinia Colada** — async state (`useQuery`/`useMutation`/`useQueryCache` in `src/stores/messages.ts`)
-- shadcn primitives in use: `Button`, `Card`, `Input`, `Textarea`, `Label`, `Badge`
-- Icons via `@lucide/vue`
+- **Tailwind CSS v4** (via `@tailwindcss/vite`) with **tweakcn** design tokens (OKLCH color system)
+- **shadcn-vue** (Reka base) component primitives
+- **ky** — typed HTTP client (`src/lib/api.ts`)
+- **Pinia Colada** — async state (`useQuery` / `useMutation`)
+- **Highcharts** — live per-core CPU line chart + reusable gauge component
+- **Lucide** icons
 
-### Backend (`main.go`, `api.go`, `models.go`)
+### Backend
 
-- **Go 1.25** + [Fiber v3](https://gofiber.io/) HTTP framework
-- **GORM** (`gorm.io/gorm`) + `gorm.io/driver/sqlite` (mattn/go-sqlite3, CGO required)
-- **JWT v5** (`github.com/golang-jwt/jwt/v5`) — HS256, 7-day expiry, random 32-byte signing key
-- Fiber middleware stack: `requestid`, `recover`, `etag`, `compress`, `cors`, `limiter` (200 req/min), `logger`
+- **Go** + [Fiber v3](https://gofiber.io/) HTTP framework
+- **GORM** + SQLite (WAL mode, foreign keys ON)
+- **JWT v5** — HS256, 7-day expiry
+- Fiber middleware: `requestid`, `recover`, `etag`, `compress`, `cors`, `limiter`, `logger`
+- **WebSocket** — live analytics stream (`/api/ws/analytic`), auth-gated
 - `go:embed all:web/dist` — frontend bundled into the Go binary at compile time
 
-## Ports
+---
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 20000 | HTTP | BE Go: API + WS dashboard (WS prefix `/api/ws/*`) — no SPA (GOTIFY_BE) |
-| 20001 | HTTP | Proxy HTTP + ACME → FE :20003 (GOTIFY_HTTP) |
-| 20002 | HTTPS | Proxy HTTPS → FE :20003 (GOTIFY_HTTPS) |
-| 20003 | HTTP | FE Vue Vite dev server (Vite HMR ws sendiri) — proxy `/api` → :20000 (GOTIFY_FE) |
-| 8080  | HTTP+HTTPS | Proxy all-in-one (HTTP+HTTPS+ACME on ONE port) → FE :20003 — Cloudflare tunnel single-rule ingress, simtaru.online / wajadi.online tests (GOTIFY_DUAL) |
+## 🖼️ Brand & Design
 
-All overridable via `.env` (see `.env.example`) or env vars: `GOTIFY_BE`, `GOTIFY_HTTP`, `GOTIFY_HTTPS`, `GOTIFY_FE`, `GOTIFY_DUAL`.
+![Golify logo design](web/src/assets/brand/logo-design.jpg)
 
-Request flow:
+The design system uses a **tweakcn Modern Minimal** theme with an OKLCH color palette:
 
-```
-browser → :20001/:20002/:8080 (proxy Go, domain-gated) → :20003 (Vite FE)
-        → /api → :20000 (BE Go: REST + WS /api/ws/*)
-```
+| Token | Light | Dark |
+|-------|-------|------|
+| `--background` | `oklch(1 0 0)` (white) | `oklch(0.2046 0 0)` (near-black) |
+| `--foreground` | `oklch(0.3211 0 0)` | `oklch(0.9219 0 0)` |
+| `--primary` | `oklch(0.6231 0.1880 259.8145)` | same (brand blue) |
+| `--border` | `oklch(0.9276 0.0058 264.5313)` | `oklch(0.3715 0 0)` |
 
-## Dev mode (hot reload)
+- **Typography:** Inter (sans), JetBrains Mono (mono), Source Serif 4 (serif)
+- **Radius:** `0.375rem`
+- Dark mode toggles via `.dark` class on `<html>`, persisted in localStorage.
 
-```bash
-./dev.sh          # backend (./run) + Vite dev server with HMR
-./dev.sh --fe     # frontend only (hot reload on :5173)
-./dev.sh --be     # backend only
-```
+---
 
-- **Frontend** (`web/`): `npm run dev` → Vite on `:5173`, proxies `/api` → `GOTIFY_HTTP` and `/ws` → `GOTIFY_FE`. Edit any `.vue`/`.ts` → instant HMR, no reload needed.
-- **Backend** (Go): edits require a rebuild + restart (`go build -o run . && ./run`). Config via `.env` (godotenv) or env vars.
-- FE dev vars in `web/.env` (prefix `VITE_`): `VITE_DEV_PORT`, `VITE_DEV_PROXY_API`, `VITE_DEV_PROXY_WS` — see `web/.env.example`.
-- BE vars in `.env` — see `.env.example`.
+## 🚀 Getting Started
 
+### Prerequisites
 
-## Build pipeline (single binary)
+- **Go 1.25+**
+- **Node.js 20+** (frontend dev)
+- Optional: Docker for containerized builds
 
-```
-[1] node:22-alpine       npm run build  →  web/dist/
-[2] golang:1.25-alpine   go:embed web/dist + go build  →  run (single binary, FE bundled)
-[3] alpine:3.20          copy run, run as non-root `golify`
-```
-
-The container image only carries the BE binary; no Node runtime in production.
-
-## Layout
-
-```
-/app/
-├── run              # single Go binary, FE embedded via go:embed
-└── data/            # mounted as a Docker volume
-    ├── golify.db          # SQLite (WAL mode, foreign_keys=ON)
-    └── ssl/
-        ├── letsencrypt/   # <domain>/fullchain.pem + privkey.pem
-        │                  #   plus .acme/<token> for ACME http-01 solver
-        └── custom/        # <domain>.crt + <domain>.key
-```
-
-## API
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET    | `/api/v1/health` | – | `{status,app}` |
-| GET    | `/api/v1/message` | – | List latest 50 messages |
-| POST   | `/api/v1/message` | JWT | Create message |
-| DELETE | `/api/v1/message/:id` | JWT | Delete a message |
-| POST   | `/api/v1/auth/login` | – | Exchange username/password for JWT |
-| GET    | `/api/v1/admin/application` | Admin JWT | List apps |
-| POST   | `/api/v1/admin/application` | Admin JWT | Create app (returns token) |
-| GET    | `/api/v1/admin/client` | Admin JWT | List clients |
-
-Send a message:
+### Local development (hot reload)
 
 ```bash
-curl -X POST http://localhost/api/v1/message \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"hi","message":"world","priority":3}'
+# Terminal 1 — frontend (Vite dev server with HMR)
+cd web
+npm install --legacy-peer-deps
+npm run dev
+
+# Terminal 2 — backend (rebuild + run)
+go build -o run .
+./run
 ```
 
-## Run
+### Docker
 
 ```bash
 docker compose up -d --build
 ```
 
-- FE (Vite): <http://localhost:20003> (proxy `/api` → :20000)
-- BE (API + WS): <http://localhost:20000/api/v1/health>, WS <ws://localhost:20000/api/ws/analytic>
-- Proxy HTTP: <http://localhost:20001> (gate) → FE
-- Proxy HTTPS: <https://localhost:20002> (needs cert in `data/ssl/custom/<domain>.crt` + `.key` or `data/ssl/letsencrypt/<domain>/fullchain.pem` + `privkey.pem`) → FE
-- Proxy all-in-one: <http://localhost:8080> (gate) → FE
-- ACME: `certbot certonly --webroot -w /app/data/ssl/letsencrypt -d your.domain` (challenge files served through the :20001 proxy at `/.well-known/acme-challenge/:token`)
+---
 
-## Local dev (without Docker)
+## 🏗️ Build Pipeline
 
-```bash
-# terminal 1 — FE (Vite proxies /api to the Go backend, dev server on :20003)
-cd web && npm install --legacy-peer-deps && npm run dev
+The frontend is compiled and **embedded into the Go binary** — production runs a single static executable with zero Node runtime:
 
-# terminal 2 — BE on non-privileged ports (no root needed)
-go build -o run . && ./run
+```
+[1] node:22-alpine       npm run build          → web/dist/
+[2] golang:1.25-alpine   go:embed web/dist      → single binary
+[3] alpine:3.20          copy binary, non-root user
 ```
 
-- FE (Vite): <http://localhost:20003> (proxy `/api` → :20000)
-- BE (API + WS): <http://localhost:20000/api/v1/health>, WS <ws://localhost:20000/api/ws/analytic>
-- Proxy HTTP: <http://localhost:20001> (gate) → FE
-- Proxy HTTPS: <https://localhost:20002> (needs cert in `data/ssl/custom/<domain>.crt` + `.key` or `data/ssl/letsencrypt/<domain>/fullchain.pem` + `privkey.pem`) → FE
-- Proxy all-in-one: <http://localhost:8080> (gate) → FE
-- ACME: `certbot certonly --webroot -w /app/data/ssl/letsencrypt -d your.domain` (challenge files served through the :20001 proxy at `/.well-known/acme-challenge/:token`)
+---
 
-## TODO
+## 🔌 API
 
-- Seed admin user from env (`GOTIFY_ADMIN_USER` + `GOTIFY_ADMIN_PASS_HASH`) on first boot
-- Hash passwords with bcrypt/argon2id in `/api/v1/auth/login` (currently plaintext comparison as a placeholder)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/health` | – | Service health `{status, app}` |
+| POST | `/api/v1/auth/login` | – | Exchange email/password for JWT |
+| POST | `/api/v1/auth/onboard` | – | Create first admin (onboarding) |
+| GET | `/api/v1/auth/status` | – | Auth/onboarding status |
+| GET | `/api/v1/domains` | JWT | List domains |
+| POST | `/api/v1/domains` | JWT | Register domain |
+| GET | `/api/v1/projects` | JWT | List projects (with cluster status) |
+| POST | `/api/v1/projects` | JWT | Create project + kind cluster |
+| GET | `/api/v1/servers` | JWT | List servers |
+| GET | `/api/v1/system/containers` | JWT | Container count/runtime |
+| WS | `/api/ws/analytic` | JWT (query token) | Live system metrics |
+
+> Full route list evolves as the dashboard grows — browse the Go source for the complete set.
+
+---
+
+## 📁 Project Layout
+
+```
+├── main.go            # entrypoint, HTTP listeners, SPA serving
+├── api.go             # REST routes
+├── models.go          # GORM models
+├── domains.go         # domain CRUD
+├── projects.go        # project + kind cluster management
+├── ws.go              # WebSocket analytics
+├── web/               # Vue 3 frontend
+│   └── src/
+│       ├── views/     # dashboard pages
+│       ├── components/ (ui/ = shadcn primitives)
+│       ├── stores/    # Pinia stores
+│       └── assets/    # styles, brand assets
+└── data/
+    ├── golify.db      # SQLite
+    └── ssl/           # TLS certificates (ACME + custom)
+```
+
+---
+
+## 🛡️ Security
+
+- JWT-based authentication with role-gated routes
+- Password storage via bcrypt hash (`users.passhash`)
+- Onboarding-first flow — no default credentials shipped
+- Rate limiting (200 req/min), request IDs, CORS policy
+- Non-root container user
+- No sensitive values (credentials, tokens, test domains) are committed to this README or the repository
+
+---
+
+## 📝 License
+
+Private — © Sawang Teknologi Indonesia. All rights reserved.
