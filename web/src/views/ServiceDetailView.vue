@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -15,7 +15,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useProjectsStore } from '@/stores'
 import { getAuth } from '@/lib/api'
 import type { Service } from '@/lib/types'
@@ -65,6 +64,14 @@ const sections = [
   { id: 'danger', label: 'Danger Zone', icon: 'alert' },
 ]
 const activeSection = ref('general')
+const activeTab = ref('configuration')
+const topTabs = [
+  { id: 'configuration', label: 'Configuration', icon: Box },
+  { id: 'deployments', label: 'Deployments', icon: Activity },
+  { id: 'logs', label: 'Logs', icon: ScrollText },
+  { id: 'terminal', label: 'Terminal', icon: Box },
+  { id: 'links', label: 'Links', icon: Globe },
+]
 
 // ─── General form state ───────────────────────────────────────────────────
 const form = reactive({
@@ -171,14 +178,14 @@ function action(a: 'start' | 'stop' | 'restart') {
   }
 }
 
-// ─── Terminal (kept from previous design) ─────────────────────────────────
+// ─── Terminal (initialized lazily when the Terminal tab is opened) ────────
 const termEl = ref<HTMLDivElement | null>(null)
 let term: Terminal | null = null
 let fit: FitAddon | null = null
 let ws: WebSocket | null = null
 
-onMounted(() => {
-  if (!termEl.value) return
+function initTerminal() {
+  if (!termEl.value || term) return
   term = new Terminal({
     cursorBlink: true,
     fontSize: 13,
@@ -214,6 +221,17 @@ onMounted(() => {
     term.writeln('\x1b[31mWS not available\x1b[0m')
   }
   term.onData((data) => ws?.send(data))
+}
+watch(activeTab, (tab) => {
+  if (tab === 'terminal') {
+    setTimeout(() => {
+      initTerminal()
+      fit?.fit()
+    }, 0)
+  } else {
+    ws?.close()
+    ws = null
+  }
 })
 watch(termEl, () => setTimeout(() => fit?.fit(), 0))
 onBeforeUnmount(() => {
@@ -285,35 +303,39 @@ const sectionIcons: Record<string, string> = {
       </div>
     </header>
 
-    <!-- Top tabs (Coolify-style) -->
-    <Tabs default-value="configuration" class="w-full">
-      <TabsList class="w-full overflow-x-auto">
-        <TabsTrigger value="configuration" class="flex-1"><Box class="mr-1 size-4" />Configuration</TabsTrigger>
-        <TabsTrigger value="deployments" class="flex-1"><Activity class="mr-1 size-4" />Deployments</TabsTrigger>
-        <TabsTrigger value="logs" class="flex-1"><ScrollText class="mr-1 size-4" />Logs</TabsTrigger>
-        <TabsTrigger value="terminal" class="flex-1"><Box class="mr-1 size-4" />Terminal</TabsTrigger>
-        <TabsTrigger value="links" class="flex-1"><Globe class="mr-1 size-4" />Links</TabsTrigger>
-      </TabsList>
+    <!-- Top tab bar (Coolify-style, simple buttons — no flex-1 stretch) -->
+    <div class="flex flex-wrap gap-1 border-b text-sm">
+      <button
+        v-for="t in topTabs"
+        :key="t.id"
+        class="flex items-center gap-1.5 border-b-2 px-3 py-2 transition-colors"
+        :class="activeTab === t.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+        @click="activeTab = t.id"
+      >
+        <component :is="t.icon" class="size-4" /> {{ t.label }}
+      </button>
+    </div>
 
-      <TabsContent value="configuration">
-        <div class="grid gap-4 md:grid-cols-[220px_1fr]">
-          <!-- Left sidebar -->
-          <nav class="flex flex-col gap-0.5 rounded-md border bg-card p-2 text-sm">
-            <button
-              v-for="sec in sections"
-              :key="sec.id"
-              class="flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors"
-              :class="activeSection === sec.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-              @click="activeSection = sec.id"
-            >
-              <span class="text-xs">{{ sectionIcons[sec.icon] }}</span>
-              <span class="truncate">{{ sec.label }}</span>
-            </button>
-          </nav>
+    <!-- Configuration: sidebar LEFT + form content -->
+    <div v-if="activeTab === 'configuration'" class="grid gap-4 md:grid-cols-[220px_1fr]">
+      <!-- Left sidebar -->
+      <nav class="flex flex-col gap-0.5 rounded-md border bg-card p-2 text-sm md:h-fit">
+        <button
+          v-for="sec in sections"
+          :key="sec.id"
+          class="flex items-center gap-2 rounded px-2 py-1.5 text-left transition-colors"
+          :class="activeSection === sec.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+          @click="activeSection = sec.id"
+        >
+          <span class="text-xs">{{ sectionIcons[sec.icon] }}</span>
+          <span class="truncate">{{ sec.label }}</span>
+        </button>
+      </nav>
 
-          <!-- Main content -->
-          <div class="min-w-0">
-            <template v-if="activeSection === 'general'">
+      <!-- Main content -->
+      <div class="min-w-0">
+        <div class="mx-auto w-full max-w-3xl">
+        <template v-if="activeSection === 'general'">
               <div class="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <h2 class="text-lg font-semibold">General</h2>
@@ -461,53 +483,56 @@ const sectionIcons: Record<string, string> = {
               </Card>
             </template>
           </div>
+          </div>
         </div>
-      </TabsContent>
 
-      <TabsContent value="deployments">
-        <Card>
-          <CardHeader><CardTitle>Deployments</CardTitle><CardDescription>Deployment history will appear here.</CardDescription></CardHeader>
-        </Card>
-      </TabsContent>
+    <!-- Deployments -->
+    <div v-else-if="activeTab === 'deployments'">
+      <Card>
+        <CardHeader><CardTitle>Deployments</CardTitle><CardDescription>Deployment history will appear here.</CardDescription></CardHeader>
+      </Card>
+    </div>
 
-      <TabsContent value="logs">
-        <Card>
-          <CardHeader>
-            <CardTitle>Logs</CardTitle>
-            <CardDescription>Last {{ logs.length }} lines.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre class="max-h-80 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed"><code>{{ logs.join('\n') }}</code></pre>
-          </CardContent>
-        </Card>
-      </TabsContent>
+    <!-- Logs -->
+    <div v-else-if="activeTab === 'logs'">
+      <Card>
+        <CardHeader>
+          <CardTitle>Logs</CardTitle>
+          <CardDescription>Last {{ logs.length }} lines.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <pre class="max-h-80 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed"><code>{{ logs.join('\n') }}</code></pre>
+        </CardContent>
+      </Card>
+    </div>
 
-      <TabsContent value="terminal">
-        <Card>
-          <CardContent class="p-2">
-            <div ref="termEl" class="h-80 rounded bg-[#0e1117]" />
-          </CardContent>
-        </Card>
-      </TabsContent>
+    <!-- Terminal -->
+    <div v-else-if="activeTab === 'terminal'">
+      <Card>
+        <CardContent class="p-2">
+          <div ref="termEl" class="h-80 rounded bg-[#0e1117]" />
+        </CardContent>
+      </Card>
+    </div>
 
-      <TabsContent value="links">
-        <Card>
-          <CardHeader><CardTitle>Links</CardTitle><CardDescription>Open the service's public links.</CardDescription></CardHeader>
-          <CardContent class="grid gap-1.5">
-            <a
-              v-for="d in service.domains ?? []"
-              :key="d.id"
-              :href="`https://${d.host}`"
-              target="_blank"
-              rel="noopener"
-              class="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-primary hover:underline"
-            >
-              <Globe class="size-4" /> {{ d.host }} → :{{ d.port }}
-            </a>
-            <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains configured yet.</p>
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
+    <!-- Links -->
+    <div v-else-if="activeTab === 'links'">
+      <Card>
+        <CardHeader><CardTitle>Links</CardTitle><CardDescription>Open the service's public links.</CardDescription></CardHeader>
+        <CardContent class="grid gap-1.5">
+          <a
+            v-for="d in service.domains ?? []"
+            :key="d.id"
+            :href="`https://${d.host}`"
+            target="_blank"
+            rel="noopener"
+            class="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-primary hover:underline"
+          >
+            <Globe class="size-4" /> {{ d.host }} → :{{ d.port }}
+          </a>
+          <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains configured yet.</p>
+        </CardContent>
+      </Card>
+    </div>
   </div>
 </template>
