@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
@@ -421,9 +422,30 @@ func registerProjects(r fiber.Router) {
 		return c.Status(201).JSON(s)
 	})
 
-	// Delete a single service (innermost level — always allowed, no children).
+	// Delete a single service. Cascade: removes the container (podman),
+	// deployment history, domains and networks attached to this service.
 	auth.Delete("/:projectId/environments/:envId/services/:serviceId", func(c fiber.Ctx) error {
 		sid := c.Params("serviceId")
+		var svc Service
+		if err := db.First(&svc, "id = ?", sid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "service not found"})
+		}
+		// 1) stop & remove the container if it exists
+		ctrName := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
+		if out, err := exec.Command("podman", "rm", "-f", ctrName).CombinedOutput(); err != nil {
+			log.Printf("[service] podman rm %s: %v (%s)", ctrName, err, strings.TrimSpace(string(out)))
+		}
+		// 2) cascade children
+		if err := db.Where("service_id = ?", sid).Delete(&Deployment{}).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "delete deployments: " + err.Error()})
+		}
+		if err := db.Where("service_id = ?", sid).Delete(&ServiceDomain{}).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "delete domains: " + err.Error()})
+		}
+		if err := db.Where("service_id = ?", sid).Delete(&ServiceNetwork{}).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "delete networks: " + err.Error()})
+		}
+		// 3) the service itself
 		if err := db.Delete(&Service{}, "id = ?", sid).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -546,6 +568,11 @@ func registerProjects(r fiber.Router) {
 		}
 		if err := db.Create(&sd).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// generate a self-signed cert so HTTPS works for this domain right away
+		// (real ACME/Let's Encrypt can replace it later — loader prefers LE dir).
+		if err := ensureSelfSignedCert(body.Host); err != nil {
+			log.Printf("[ssl] self-signed cert for %s: %v", body.Host, err)
 		}
 		return c.Status(201).JSON(sd)
 	})

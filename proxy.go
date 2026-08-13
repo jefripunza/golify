@@ -144,13 +144,29 @@ func proxyToBackend(c fiber.Ctx, target string) error {
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
-	c.Request().CopyTo(req)
-	uri := c.Request().URI()
-	req.SetRequestURI(upstream + string(uri.RequestURI()))
-	req.Header.Del("Host")
+	// Build a fresh request: method, path+query, headers, body from the
+	// incoming request — but a clean URI against the upstream (no redirect
+	// loops, no cross-protocol hop).
+	c.Request().Header.VisitAll(func(k, v []byte) {
+		key := string(k)
+		if strings.EqualFold(key, "Host") || strings.EqualFold(key, "Connection") ||
+			strings.EqualFold(key, "Upgrade") || strings.EqualFold(key, "Proxy-Connection") {
+			return
+		}
+		req.Header.SetBytesKV(k, v)
+	})
+	req.Header.SetMethodBytes(c.Request().Header.Method())
+	req.SetRequestURI(upstream + string(c.Request().URI().RequestURI()))
 	req.Header.SetHost(target)
+	if body := c.Request().Body(); len(body) > 0 {
+		req.SetBody(body)
+	}
 
-	client := &fasthttp.HostClient{Addr: target}
+	client := &fasthttp.Client{
+		NoDefaultUserAgentHeader: true,
+		// never follow redirects — mirror them to the caller
+		MaxResponseBodySize: 64 << 20,
+	}
 	if err := client.Do(req, resp); err != nil {
 		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())
 	}

@@ -449,6 +449,24 @@ const logs = ref<string[]>([
   'run `start` to boot the container',
 ])
 
+// ─── Danger Zone: delete service (cascade) ────────────────────────────────
+const deletingService = ref(false)
+const deleteServiceError = ref('')
+async function deleteServiceNow() {
+  if (deletingService.value) return
+  if (!confirm(`Delete service "${service.value?.name}" permanently? This removes domains, networks, deployment history and the container. This cannot be undone!`)) return
+  deletingService.value = true
+  deleteServiceError.value = ''
+  try {
+    await store.removeService(projectId.value, envId.value, serviceId.value)
+    router.push(`/project/${projectId.value}/environment/${envId.value}/services`)
+  } catch (e: any) {
+    deleteServiceError.value = e?.message ?? 'Failed to delete service'
+  } finally {
+    deletingService.value = false
+  }
+}
+
 // ─── Deployments ──────────────────────────────────────────────────────────
 
 // Dummy deployment history matching the reference screenshot
@@ -1003,8 +1021,19 @@ const sectionIcons: Record<string, string> = {
                   <CardTitle class="text-base text-destructive">Danger Zone</CardTitle>
                   <CardDescription>Delete this service permanently. This cannot be undone.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <Button variant="destructive" @click="router.push(`/project/${project.id}/environment/${env.id}/services`)">Delete service</Button>
+                <CardContent class="space-y-4">
+                  <div class="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                    <p class="text-sm font-medium">Delete Resource</p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      This will stop the container, remove the service and all related data — domains, networks, deployment history. There is no coming back!
+                    </p>
+                    <Button variant="destructive" class="mt-3" :disabled="deletingService" @click="deleteServiceNow">
+                      <Loader2 v-if="deletingService" class="mr-1 size-4 animate-spin" />
+                      <Trash2 v-else class="mr-1 size-4" />
+                      {{ deletingService ? 'Deleting…' : 'Delete' }}
+                    </Button>
+                    <p v-if="deleteServiceError" class="mt-2 text-xs text-destructive">{{ deleteServiceError }}</p>
+                  </div>
                 </CardContent>
               </Card>
             </template>
