@@ -14,11 +14,12 @@ import (
 // All routes require a JWT (requireAuth) unless noted.
 //
 // Hierarchy (per Pak Jefri, 2026-08-13):
-//   Project = a plain folder (no cluster of its own)
-//   Environment = the Kubernetes cluster level (kind cluster named after the
-//                 environment's UUID v7 ID). Creating an environment creates
-//                 a new kind cluster. Every new project gets a default
-//                 "production" environment (and thus one cluster).
+//
+//	Project = a plain folder (no cluster of its own)
+//	Environment = the Kubernetes cluster level (kind cluster named after the
+//	              environment's UUID v7 ID). Creating an environment creates
+//	              a new kind cluster. Every new project gets a default
+//	              "production" environment (and thus one cluster).
 func registerProjects(r fiber.Router) {
 	auth := r.Group("/projects", requireAuth)
 
@@ -59,7 +60,7 @@ func registerProjects(r fiber.Router) {
 			out = append(out, fiber.Map{
 				"id": p.ID, "name": p.Name, "description": p.Description,
 				"source_id": p.SourceID, "environments": envs,
-				"env_count": len(envs),
+				"env_count":  len(envs),
 				"created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
 			})
 		}
@@ -133,14 +134,14 @@ func registerProjects(r fiber.Router) {
 			envs = append(envs, fiber.Map{
 				"id": e.ID, "name": e.Name, "is_production": e.IsProduction,
 				"cluster_status": kindClusterStatus(e.ID),
-				"services": svcs, "domains": domains,
+				"services":       svcs, "domains": domains,
 				"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
 			})
 		}
 		return c.JSON(fiber.Map{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"source_id": p.SourceID, "environments": envs,
-			"env_count": len(envs),
+			"env_count":  len(envs),
 			"created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
 		})
 	})
@@ -203,6 +204,7 @@ func registerProjects(r fiber.Router) {
 	auth.Post("/:projectId/environments", func(c fiber.Ctx) error {
 		var body struct {
 			Name         string   `json:"name"`
+			Description  string   `json:"description"`
 			IsProduction bool     `json:"is_production"`
 			Domains      []string `json:"domains"`
 		}
@@ -219,7 +221,7 @@ func registerProjects(r fiber.Router) {
 		}
 		// Environment = Kubernetes cluster. The env UUID v7 is the cluster
 		// name — creating an environment creates a brand-new kind cluster.
-		env := Environment{ProjectID: pid, Name: body.Name, IsProduction: body.IsProduction}
+		env := Environment{ProjectID: pid, Name: body.Name, Description: body.Description, IsProduction: body.IsProduction}
 		env.ID = newID()
 		for _, h := range body.Domains {
 			env.Domains = append(env.Domains, Domain{Host: h})
@@ -232,9 +234,41 @@ func registerProjects(r fiber.Router) {
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
 		return c.Status(201).JSON(fiber.Map{
-			"id": env.ID, "name": env.Name, "is_production": env.IsProduction,
+			"id": env.ID, "name": env.Name, "description": env.Description, "is_production": env.IsProduction,
 			"cluster_status": "Running", "services": []fiber.Map{},
 			"domains": []fiber.Map{}, "created_at": env.CreatedAt, "updated_at": env.UpdatedAt,
+		})
+	})
+
+	// Update an environment (name / description). Kind cluster is untouched.
+	auth.Patch("/:projectId/environments/:envId", func(c fiber.Ctx) error {
+		eid := c.Params("envId")
+		var env Environment
+		if err := db.First(&env, "id = ?", eid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "environment not found"})
+		}
+		var body struct {
+			Name        *string `json:"name"`
+			Description *string `json:"description"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		if body.Name != nil {
+			if *body.Name == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+			}
+			env.Name = *body.Name
+		}
+		if body.Description != nil {
+			env.Description = *body.Description
+		}
+		if err := db.Save(&env).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"id": env.ID, "name": env.Name, "description": env.Description,
+			"is_production": env.IsProduction, "updated_at": env.UpdatedAt,
 		})
 	})
 

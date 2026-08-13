@@ -22,6 +22,7 @@ export interface Service {
 export interface Environment {
   id: ID
   name: string // e.g. production, staging, preview-123
+  description?: string
   services: Service[]
   domains: string[]
   isProduction: boolean

@@ -11,19 +11,19 @@ type UUID = string
 
 // BeforeCreate auto-fills a UUID v7 primary key when empty. Every model with
 // `ID UUID` benefits; callers never need to set IDs manually.
-func (m *User) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
-func (m *Project) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
-func (m *Environment) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
-func (m *Service) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
-func (m *Domain) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *Server) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *Source) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *S3Storage) BeforeCreate(tx *gorm.DB) error          { return fillID(&m.ID) }
-func (m *SharedVariable) BeforeCreate(tx *gorm.DB) error     { return fillID(&m.ID) }
-func (m *Key) BeforeCreate(tx *gorm.DB) error                { return fillID(&m.ID) }
-func (m *ApiKey) BeforeCreate(tx *gorm.DB) error             { return fillID(&m.ID) }
-func (m *Team) BeforeCreate(tx *gorm.DB) error               { return fillID(&m.ID) }
-func (m *TeamMember) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+func (m *User) BeforeCreate(tx *gorm.DB) error           { return fillID(&m.ID) }
+func (m *Project) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Environment) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) }
+func (m *Service) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
+func (m *Domain) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+func (m *Server) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+func (m *Source) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+func (m *S3Storage) BeforeCreate(tx *gorm.DB) error      { return fillID(&m.ID) }
+func (m *SharedVariable) BeforeCreate(tx *gorm.DB) error { return fillID(&m.ID) }
+func (m *Key) BeforeCreate(tx *gorm.DB) error            { return fillID(&m.ID) }
+func (m *ApiKey) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
+func (m *Team) BeforeCreate(tx *gorm.DB) error           { return fillID(&m.ID) }
+func (m *TeamMember) BeforeCreate(tx *gorm.DB) error     { return fillID(&m.ID) }
 
 // fillID assigns a UUID v7 when the pointer target is empty.
 func fillID(id *UUID) error {
@@ -61,6 +61,7 @@ type Environment struct {
 	ID           UUID      `gorm:"primaryKey;size:36" json:"id"`
 	ProjectID    UUID      `gorm:"not null;index;size:36" json:"project_id"`
 	Name         string    `gorm:"size:255;not null" json:"name"`
+	Description  string    `gorm:"size:512;default:''" json:"description"`
 	IsProduction bool      `gorm:"not null;default:false" json:"is_production"`
 	Domains      []Domain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
 	Services     []Service `gorm:"constraint:OnDelete:CASCADE" json:"services,omitempty"`
@@ -70,16 +71,16 @@ type Environment struct {
 
 // Service is a container or compose app inside an Environment.
 type Service struct {
-	ID            UUID     `gorm:"primaryKey;size:36" json:"id"`
-	EnvironmentID UUID     `gorm:"not null;index;size:36" json:"environment_id"`
-	Name          string   `gorm:"size:255;not null" json:"name"`
-	Kind          string   `gorm:"size:32;not null;default:'container'" json:"kind"` // container | compose
-	Image         string   `gorm:"size:512;default:''" json:"image"`
-	ComposePath   string   `gorm:"size:512;default:''" json:"compose_path"`
-	Status        string   `gorm:"size:32;not null;default:'stopped'" json:"status"`
-	CPU           float64  `gorm:"default:0" json:"cpu"`
-	Memory        int64    `gorm:"default:0" json:"memory"` // MB
-	Ports         []string `gorm:"serializer:json" json:"ports"`
+	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID UUID      `gorm:"not null;index;size:36" json:"environment_id"`
+	Name          string    `gorm:"size:255;not null" json:"name"`
+	Kind          string    `gorm:"size:32;not null;default:'container'" json:"kind"` // container | compose
+	Image         string    `gorm:"size:512;default:''" json:"image"`
+	ComposePath   string    `gorm:"size:512;default:''" json:"compose_path"`
+	Status        string    `gorm:"size:32;not null;default:'stopped'" json:"status"`
+	CPU           float64   `gorm:"default:0" json:"cpu"`
+	Memory        int64     `gorm:"default:0" json:"memory"` // MB
+	Ports         []string  `gorm:"serializer:json" json:"ports"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
@@ -90,10 +91,10 @@ type Service struct {
 // environment (environment_id empty) and later linked to one; the proxy
 // gate only serves the SPA when the environment has a service.
 type Domain struct {
-	ID            UUID       `gorm:"primaryKey;size:36" json:"id"`
-	EnvironmentID *UUID      `gorm:"index;size:36" json:"environment_id"`
-	Host          string     `gorm:"size:255;not null;uniqueIndex" json:"host"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
+	EnvironmentID *UUID     `gorm:"index;size:36" json:"environment_id"`
+	Host          string    `gorm:"size:255;not null;uniqueIndex" json:"host"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // ─── Infrastructure / Security models (menus Servers..Teams) ──────────────
@@ -108,7 +109,7 @@ type Server struct {
 	Provider    string    `gorm:"size:32;default:'self-hosted'" json:"provider"`
 	Status      string    `gorm:"size:16;default:'unknown'" json:"status"`
 	CPU         float64   `gorm:"default:0" json:"cpu"`
-	Memory      int64     `gorm:"default:0" json:"memory"`      // MB used
+	Memory      int64     `gorm:"default:0" json:"memory"`       // MB used
 	MemoryTotal int64     `gorm:"default:0" json:"memory_total"` // MB total
 	Disk        float64   `gorm:"default:0" json:"disk"`         // % used
 	Containers  int       `gorm:"default:0" json:"containers"`

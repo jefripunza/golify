@@ -191,6 +191,21 @@ export const useProjectsStore = defineStore('projects', () => {
     if (p) p.environments = p.environments.filter((e: any) => e.id !== envId)
   }
 
+  async function createEnv(projectId: string, input: { name: string; description?: string }) {
+    const created = await authed().post(`api/v1/projects/${projectId}/environments`, { json: input }).json<any>()
+    const p = raw.value.find((p) => p.id === projectId)
+    if (p) p.environments = [created, ...(p.environments ?? [])]
+    return created
+  }
+
+  async function updateEnv(projectId: string, envId: string, input: { name?: string; description?: string }) {
+    const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}`, { json: input }).json<any>()
+    const p = raw.value.find((p) => p.id === projectId)
+    const e = p?.environments?.find((e: any) => e.id === envId)
+    if (e) Object.assign(e, updated)
+    return updated
+  }
+
   async function removeService(projectId: string, envId: string, serviceId: string) {
     // Dummy services (svc-dummy-*) are FE-only placeholders until the
     // backend service CRUD is wired up — removing them is local-only.
@@ -229,7 +244,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, removeService, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, removeService, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

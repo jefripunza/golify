@@ -78,19 +78,6 @@ async function confirmDeleteService() {
 }
 
 const deleteEnvOpen = ref(false)
-async function confirmDeleteEnv() {
-  if (deleting.value) return
-  deleting.value = true
-  deleteError.value = ''
-  try {
-    await store.removeEnv(projectId.value, envId.value)
-    // back to the env list of this project
-    void router.push(`/project/${projectId.value}/environments?envs=1`)
-  } catch (e: any) {
-    deleteError.value = e?.message || 'Failed to delete environment'
-    deleting.value = false
-  }
-}
 </script>
 
 <template>
@@ -103,12 +90,7 @@ async function confirmDeleteEnv() {
     </div>
 
     <header>
-      <div class="flex items-center justify-between gap-2">
-        <h1 class="text-2xl font-semibold tracking-tight">{{ env.name }}</h1>
-        <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click="deleteEnvOpen = true">
-          <Trash2 class="mr-1 size-4" /> Delete env
-        </Button>
-      </div>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ env.name }}</h1>
       <p class="flex items-center gap-2 text-sm text-muted-foreground">
         <Globe class="size-4" />
         <span class="truncate">{{ env.domains.join(', ') || 'no domain' }}</span>
@@ -159,16 +141,6 @@ async function confirmDeleteEnv() {
       :error="deleteError"
       @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
       @confirm="confirmDeleteService"
-    />
-
-    <ConfirmDeleteDialog
-      :open="deleteEnvOpen"
-      :item-name="'environment'"
-      :confirm-text="env.name"
-      :loading="deleting"
-      :error="deleteError"
-      @update:open="(v: boolean) => { if (!v) deleteEnvOpen = false }"
-      @confirm="confirmDeleteEnv"
     />
   </div>
 </template>
