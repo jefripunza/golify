@@ -11,7 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useProjectsStore } from '@/stores'
-import { Box, ArrowRight, Globe, Trash2, Plus } from '@lucide/vue'
+import { Box, Globe, Trash2, Plus } from '@lucide/vue'
 import type { Service } from '@/lib/types'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
 import AddServiceDialog from '@/components/AddServiceDialog.vue'
@@ -132,14 +132,9 @@ async function handleCreateService(input: { name: string; type: 'application' | 
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
             <span>CPU {{ svc.cpu }}% · {{ svc.memory }} MB</span>
-            <div class="flex items-center gap-1">
-              <Button variant="ghost" size="sm">
-                Open <ArrowRight class="ml-1 size-3" />
-              </Button>
-              <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click.stop="requestDeleteService(svc)">
-                <Trash2 class="size-3" />
-              </Button>
-            </div>
+            <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click.stop="requestDeleteService(svc)">
+              <Trash2 class="size-3" />
+            </Button>
           </CardContent>
         </Card>
       </div>

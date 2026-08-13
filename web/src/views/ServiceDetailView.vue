@@ -154,7 +154,7 @@ function action(a: 'start' | 'stop' | 'restart') {
     Service not found.
   </div>
   <div v-else class="grid gap-4">
-    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+    <div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
       <RouterLink to="/projects" class="hover:text-foreground">
         <FolderTree class="inline size-3" /> {{ project.name }}
       </RouterLink>
@@ -163,19 +163,19 @@ function action(a: 'start' | 'stop' | 'restart') {
         <Layers class="inline size-3" /> {{ env.name }}
       </RouterLink>
       <span>/</span>
-      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="flex items-center gap-1 hover:text-foreground">
-        <Box class="inline size-3" /> {{ service.name }}
+      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="flex items-center gap-1 truncate hover:text-foreground">
+        <Box class="inline size-3 shrink-0" /> <span class="truncate">{{ service.name }}</span>
       </RouterLink>
     </div>
 
-    <header class="flex items-start justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">{{ service.name }}</h1>
-        <p class="font-mono text-xs text-muted-foreground">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div class="min-w-0">
+        <h1 class="truncate text-2xl font-semibold tracking-tight">{{ service.name }}</h1>
+        <p class="truncate font-mono text-xs text-muted-foreground">
           {{ service.kind }} · {{ service.image || service.composePath || '—' }}
         </p>
       </div>
-      <Badge :variant="statusVariant(service.status)">{{ service.status }}</Badge>
+      <Badge :variant="statusVariant(service.status)" class="w-fit shrink-0">{{ service.status }}</Badge>
     </header>
 
     <div class="flex flex-wrap gap-2">
@@ -190,7 +190,7 @@ function action(a: 'start' | 'stop' | 'restart') {
       </Button>
     </div>
 
-    <div class="grid gap-3 md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
       <Card>
         <CardHeader class="pb-2">
           <CardDescription>CPU</CardDescription>
@@ -203,10 +203,10 @@ function action(a: 'start' | 'stop' | 'restart') {
           <CardTitle class="text-2xl">{{ service.memory }} MB</CardTitle>
         </CardHeader>
       </Card>
-      <Card>
+      <Card class="sm:col-span-2 md:col-span-1">
         <CardHeader class="pb-2">
           <CardDescription>Ports</CardDescription>
-          <CardTitle class="font-mono text-sm">
+          <CardTitle class="break-all font-mono text-sm">
             {{ service.ports.join(', ') || '—' }}
           </CardTitle>
         </CardHeader>
@@ -214,10 +214,10 @@ function action(a: 'start' | 'stop' | 'restart') {
     </div>
 
     <Tabs default-value="terminal" class="w-full">
-      <TabsList>
-        <TabsTrigger value="terminal"><Box class="mr-1 size-4" />Terminal</TabsTrigger>
-        <TabsTrigger value="logs"><ScrollText class="mr-1 size-4" />Logs</TabsTrigger>
-        <TabsTrigger value="metrics"><Activity class="mr-1 size-4" />Metrics</TabsTrigger>
+      <TabsList class="w-full overflow-x-auto">
+        <TabsTrigger value="terminal" class="flex-1"><Box class="mr-1 size-4" />Terminal</TabsTrigger>
+        <TabsTrigger value="logs" class="flex-1"><ScrollText class="mr-1 size-4" />Logs</TabsTrigger>
+        <TabsTrigger value="metrics" class="flex-1"><Activity class="mr-1 size-4" />Metrics</TabsTrigger>
       </TabsList>
       <TabsContent value="terminal">
         <Card>
@@ -244,7 +244,7 @@ function action(a: 'start' | 'stop' | 'restart') {
             <CardDescription>Plug a Prometheus/VictoriaMetrics scrape here.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div class="grid grid-cols-2 gap-2 text-sm">
+            <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
               <div class="rounded-md bg-muted p-3">
                 <p class="text-xs uppercase text-muted-foreground">CPU throttling</p>
                 <p class="mt-1 font-mono">0.5%</p>
