@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import AppToaster from '@/components/AppToaster.vue'
 </script>
 
 <template>
@@ -8,4 +9,5 @@ import { RouterView } from 'vue-router'
     AppLayout for the dashboard). Layouts own their chrome (sidebar/topbar).
   -->
   <RouterView />
+  <AppToaster />
 </template>

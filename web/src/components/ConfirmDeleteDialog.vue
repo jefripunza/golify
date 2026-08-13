@@ -30,13 +30,33 @@ const emit = defineEmits<{
 }>()
 
 const typed = ref('')
+const copied = ref(false)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
 
 watch(
   () => props.open,
   (open) => {
-    if (open) typed.value = ''
+    if (open) {
+      typed.value = ''
+      copied.value = false
+    }
   },
 )
+
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(props.confirmText)
+    copied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } catch {
+    // clipboard API blocked (non-secure context / permission) — fall back
+    // to select() so the user can still copy manually.
+    copied.value = false
+  }
+}
 
 const matches = computed(() => typed.value === props.confirmText)
 const canDelete = computed(() => matches.value && !props.loading)
@@ -61,16 +81,25 @@ function onOpenChange(open: boolean) {
       </DialogHeader>
 
       <div class="grid gap-1.5">
-        <Label for="confirm-copy">{{ itemName }} name (copy from here)</Label>
-        <Input
+        <Label for="confirm-copy">{{ itemName }} name (tap to copy)</Label>
+        <button
           id="confirm-copy"
-          :model-value="confirmText"
-          readonly
-          class="select-all font-mono"
-          tabindex="-1"
-          @focus="($event.target as HTMLInputElement).select()"
-        />
-        <p class="text-xs text-muted-foreground">Tap the field above to select all, then copy.</p>
+          type="button"
+          class="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 font-mono text-sm text-foreground transition-colors hover:bg-muted/60"
+          :disabled="loading"
+          @click="copyToClipboard"
+        >
+          <span class="truncate">{{ confirmText }}</span>
+          <span
+            class="shrink-0 text-xs font-medium"
+            :class="copied ? 'text-green-500' : 'text-muted-foreground'"
+          >
+            {{ copied ? '✓ Copied!' : 'Copy' }}
+          </span>
+        </button>
+        <p class="text-xs text-muted-foreground">
+          Tap to copy the name, then paste it below.
+        </p>
       </div>
 
       <div class="grid gap-1.5">

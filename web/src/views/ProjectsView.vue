@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import AppDialog from '@/components/AppDialog.vue'
 import { useProjectsStore } from '@/stores'
+import { toast } from '@/lib/toast'
 import type { Project } from '@/lib/types'
 import { FolderTree, Plus, Pencil, Loader2, Trash2 } from '@lucide/vue'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
@@ -94,6 +95,17 @@ async function removeProject(id: string) {
 const deleteTarget = ref<Project | null>(null)
 const deleteError = ref('')
 function requestDelete(p: Project) {
+  // Cascade rule: project with environments can't be deleted. Tell the
+  // user right away with a toast instead of opening the confirm dialog.
+  const envCount = p.envCount ?? p.environments?.length ?? 0
+  if (envCount > 0) {
+    toast({
+      title: 'Cannot delete project',
+      description: `Project "${p.name}" still has ${envCount} environment(s). Delete all environments (clusters) first.`,
+      variant: 'destructive',
+    })
+    return
+  }
   deleteTarget.value = p
   deleteError.value = ''
 }
@@ -106,6 +118,11 @@ async function confirmDelete() {
     deleteTarget.value = null
   } catch (e: any) {
     deleteError.value = e?.message || 'Failed to delete project'
+    toast({
+      title: 'Cannot delete project',
+      description: deleteError.value,
+      variant: 'destructive',
+    })
   } finally {
     deleting.value = null
   }
