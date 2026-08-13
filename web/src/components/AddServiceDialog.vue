@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AppWindow, Database, Wrench, Box, GitBranch, Loader2 } from '@lucide/vue'
+import { AppWindow, Database, Wrench, ArrowLeft, Box, GitBranch, Loader2 } from '@lucide/vue'
 
 const props = defineProps<{ open: boolean; loading?: boolean }>()
 const emit = defineEmits<{
@@ -57,6 +57,12 @@ watch(() => props.open, (open) => {
   if (open) reset()
 })
 
+function back() {
+  if (step.value === 'app-docker' || step.value === 'app-vcs') step.value = 'application-sub'
+  else if (step.value === 'application-sub' || step.value === 'database' || step.value === 'tool') step.value = 'root'
+  else emit('update:open', false)
+}
+
 const canSubmit = computed(() => {
   if (step.value === 'app-docker') return form.value.name && form.value.image
   if (step.value === 'app-vcs') return form.value.name && form.value.repo
@@ -76,7 +82,12 @@ function submit() {
   <Dialog :open="open" @update:open="(v: boolean) => { if (!v) reset(); emit('update:open', v) }">
     <DialogContent class="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Add Service</DialogTitle>
+        <DialogTitle>
+          <button v-if="step !== 'root'" class="mr-1 align-middle text-muted-foreground hover:text-foreground" @click="back">
+            <ArrowLeft class="size-4" />
+          </button>
+          Add Service
+        </DialogTitle>
         <DialogDescription>Pick what to deploy into this environment.</DialogDescription>
       </DialogHeader>
 
