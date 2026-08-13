@@ -124,6 +124,8 @@ function mapSvc(s: any): Service {
     id: String(s.id),
     name: s.name,
     kind: s.kind === 'compose' ? 'compose' : 'container',
+    type: s.type === 'database' || s.type === 'tool' ? s.type : 'application',
+    catalog: s.catalog || undefined,
     image: s.image || undefined,
     composePath: s.compose_path || undefined,
     status: s.status ?? 'stopped',
@@ -208,6 +210,16 @@ export const useProjectsStore = defineStore('projects', () => {
     return updated
   }
 
+  async function createService(projectId: string, envId: string, input: { name: string; type: string; catalog?: string; image?: string; ports?: string[] }) {
+    const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services`, {
+      json: { kind: 'container', ...input },
+    }).json<any>()
+    const p = raw.value.find((p) => p.id === projectId)
+    const e = p?.environments?.find((e: any) => e.id === envId)
+    if (e) e.services = [...(e.services ?? []), created]
+    return created
+  }
+
   async function removeService(projectId: string, envId: string, serviceId: string) {
     // Dummy services (svc-dummy-*) are FE-only placeholders until the
     // backend service CRUD is wired up — removing them is local-only.
@@ -246,7 +258,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, removeService, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

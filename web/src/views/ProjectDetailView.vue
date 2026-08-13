@@ -153,11 +153,10 @@ function statusColor(s: string) {
                 {{ env.name }}
               </CardTitle>
               <div class="flex items-center gap-1">
-                <Badge v-if="env.isProduction" variant="destructive">production</Badge>
-                <Badge v-else variant="secondary">staging</Badge>
+                <Badge variant="secondary">{{ env.clusterStatus }}</Badge>
               </div>
             </div>
-            <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ env.description || '—' }}</CardDescription>
+            <CardDescription v-if="env.description" class="line-clamp-2">{{ env.description }}</CardDescription>
             <div v-if="env.ipInternal" class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Server class="size-3.5" />
               <span class="font-mono">{{ env.ipInternal }}</span>

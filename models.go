@@ -75,7 +75,9 @@ type Service struct {
 	ID            UUID      `gorm:"primaryKey;size:36" json:"id"`
 	EnvironmentID UUID      `gorm:"not null;index;size:36" json:"environment_id"`
 	Name          string    `gorm:"size:255;not null" json:"name"`
-	Kind          string    `gorm:"size:32;not null;default:'container'" json:"kind"` // container | compose
+	Kind          string    `gorm:"size:32;not null;default:'container'" json:"kind"`   // container | compose
+	Type          string    `gorm:"size:32;not null;default:'application'" json:"type"` // application | database | tool
+	Catalog       string    `gorm:"size:64;default:''" json:"catalog"`                  // e.g. docker-image | version-control | postgres | qdrant
 	Image         string    `gorm:"size:512;default:''" json:"image"`
 	ComposePath   string    `gorm:"size:512;default:''" json:"compose_path"`
 	Status        string    `gorm:"size:32;not null;default:'stopped'" json:"status"`

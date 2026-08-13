@@ -11,9 +11,10 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useProjectsStore } from '@/stores'
-import { Box, ArrowRight, Globe, Trash2 } from '@lucide/vue'
+import { Box, ArrowRight, Globe, Trash2, Plus } from '@lucide/vue'
 import type { Service } from '@/lib/types'
 import ConfirmDeleteDialog from '@/components/ConfirmDeleteDialog.vue'
+import AddServiceDialog from '@/components/AddServiceDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,17 +24,8 @@ const envId = computed(() => String(route.params.envId))
 const project = computed(() => store.get(projectId.value))
 const env = computed(() => store.getEnv(projectId.value, envId.value))
 
-// Dummy services while the backend service CRUD is not wired up yet
-// (per Pak Jefri: "service jangan dulu, dummy aja dulu service").
-const dummyServices = ref<Service[]>([
-  { id: 'svc-dummy-api', name: 'api', kind: 'container', image: 'example/api:latest', status: 'running', cpu: 2.4, memory: 128, ports: ['3000'] },
-  { id: 'svc-dummy-web', name: 'web', kind: 'container', image: 'example/web:latest', status: 'running', cpu: 1.1, memory: 64, ports: ['8080'] },
-  { id: 'svc-dummy-db', name: 'db', kind: 'container', image: 'postgres:16', status: 'stopped', cpu: 0, memory: 256, ports: ['5432'] },
-])
-
-const services = computed<Service[]>(() =>
-  env.value?.services?.length ? env.value.services : dummyServices.value,
-)
+// Services come straight from the backend table (no more FE dummy placeholders).
+const services = computed<Service[]>(() => env.value?.services ?? [])
 
 function statusColor(s: string) {
   switch (s) {
@@ -63,12 +55,7 @@ async function confirmDeleteService() {
   deleteError.value = ''
   try {
     const t = deleteTarget.value
-    if (t.id.startsWith('svc-dummy-')) {
-      // FE-only dummy placeholder: remove from the local list.
-      dummyServices.value = dummyServices.value.filter((s) => s.id !== t.id)
-    } else {
-      await store.removeService(projectId.value, envId.value, t.id)
-    }
+    await store.removeService(projectId.value, envId.value, t.id)
     deleteTarget.value = null
   } catch (e: any) {
     deleteError.value = e?.message || 'Failed to delete service'
@@ -78,6 +65,24 @@ async function confirmDeleteService() {
 }
 
 const deleteEnvOpen = ref(false)
+
+// ─── Add Service ──────────────────────────────────────────────────────────
+const addServiceOpen = ref(false)
+const addServiceLoading = ref(false)
+const addServiceError = ref('')
+
+async function handleCreateService(input: { name: string; type: 'application' | 'database' | 'tool'; catalog?: string; image?: string }) {
+  addServiceLoading.value = true
+  addServiceError.value = ''
+  try {
+    await store.createService(projectId.value, envId.value, input)
+    addServiceOpen.value = false
+  } catch (e: any) {
+    addServiceError.value = e?.message || 'Failed to create service'
+  } finally {
+    addServiceLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -97,6 +102,13 @@ const deleteEnvOpen = ref(false)
         <Badge variant="secondary">{{ env.clusterStatus ?? 'Unknown' }}</Badge>
       </p>
     </header>
+
+    <div class="flex items-center justify-between gap-2">
+      <p class="text-sm text-muted-foreground">{{ services.length }} service(s)</p>
+      <Button size="sm" @click="addServiceOpen = true">
+        <Plus class="mr-1 size-4" /> Add Service
+      </Button>
+    </div>
 
     <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
       <div
@@ -142,5 +154,13 @@ const deleteEnvOpen = ref(false)
       @update:open="(v: boolean) => { if (!v) deleteTarget = null }"
       @confirm="confirmDeleteService"
     />
+
+    <AddServiceDialog
+      :open="addServiceOpen"
+      :loading="addServiceLoading"
+      @update:open="(v: boolean) => { addServiceOpen = v; addServiceError = '' }"
+      @create="handleCreateService"
+    />
+    <p v-if="addServiceError" class="text-sm text-destructive">{{ addServiceError }}</p>
   </div>
 </template>

@@ -40,6 +40,7 @@ func registerProjects(r fiber.Router) {
 				for _, s := range e.Services {
 					svcs = append(svcs, fiber.Map{
 						"id": s.ID, "name": s.Name, "kind": s.Kind,
+						"type": s.Type, "catalog": s.Catalog,
 						"image": s.Image, "compose_path": s.ComposePath,
 						"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
 						"ports": s.Ports, "created_at": s.CreatedAt,
@@ -130,6 +131,7 @@ func registerProjects(r fiber.Router) {
 			for _, s := range e.Services {
 				svcs = append(svcs, fiber.Map{
 					"id": s.ID, "name": s.Name, "kind": s.Kind,
+					"type": s.Type, "catalog": s.Catalog,
 					"image": s.Image, "compose_path": s.ComposePath,
 					"status": s.Status, "cpu": s.CPU, "memory": s.Memory,
 					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
@@ -316,6 +318,8 @@ func registerProjects(r fiber.Router) {
 		var body struct {
 			Name        string   `json:"name"`
 			Kind        string   `json:"kind"`
+			Type        string   `json:"type"`    // application | database | tool
+			Catalog     string   `json:"catalog"` // e.g. docker-image | version-control | postgres | qdrant
 			Image       string   `json:"image"`
 			ComposePath string   `json:"compose_path"`
 			Status      string   `json:"status"`
@@ -333,11 +337,15 @@ func registerProjects(r fiber.Router) {
 		if body.Kind == "" {
 			body.Kind = "container"
 		}
+		if body.Type == "" {
+			body.Type = "application"
+		}
 		if body.Status == "" {
 			body.Status = "stopped"
 		}
 		s := Service{
 			EnvironmentID: eid, Name: body.Name, Kind: body.Kind,
+			Type: body.Type, Catalog: body.Catalog,
 			Image: body.Image, ComposePath: body.ComposePath, Status: body.Status,
 			CPU: body.CPU, Memory: body.Memory, Ports: body.Ports,
 		}

@@ -4,12 +4,15 @@
 export type ID = string
 
 export type ServiceKind = 'container' | 'compose'
+export type ServiceType = 'application' | 'database' | 'tool'
 export type ServiceStatus = 'running' | 'stopped' | 'building' | 'error' | 'deploying'
 
 export interface Service {
   id: ID
   name: string
   kind: ServiceKind
+  type: ServiceType
+  catalog?: string // e.g. docker-image | version-control | postgres | qdrant
   image?: string
   composePath?: string
   status: ServiceStatus
