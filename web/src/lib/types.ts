@@ -31,6 +31,11 @@ export interface Service {
   basicAuthEnable?: boolean
   basicAuthUser?: string
   basicAuthPass?: string
+  // Replicas: fix (single count) or range (min/max, autoscaling)
+  replicasMode?: 'fix' | 'range'
+  replicas?: number
+  replicasMin?: number
+  replicasMax?: number
   status: ServiceStatus
   cpu: number // %
   memory: number // MB

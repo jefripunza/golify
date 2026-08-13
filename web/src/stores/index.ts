@@ -137,6 +137,10 @@ function mapSvc(s: any): Service {
     basicAuthEnable: s.basic_auth_enable ?? false,
     basicAuthUser: s.basic_auth_user || undefined,
     basicAuthPass: s.basic_auth_pass || undefined,
+    replicasMode: s.replicas_mode === 'range' ? 'range' : 'fix',
+    replicas: s.replicas ?? 1,
+    replicasMin: s.replicas_min ?? 1,
+    replicasMax: s.replicas_max ?? 1,
     status: s.status ?? 'stopped',
     cpu: s.cpu,
     memory: s.memory,
@@ -269,6 +273,17 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.domains = (s.domains ?? []).filter((d) => d.id !== domainId)
   }
 
+  // ─── Root domains (for the subdomain dropdown) ──────────────────────────
+  const rootDomains = ref<string[]>([])
+  async function fetchRootDomains() {
+    try {
+      const rows = await authed().get('api/v1/domains').json<any[]>()
+      rootDomains.value = (rows ?? []).map((d: any) => String(d.host))
+    } catch {
+      rootDomains.value = []
+    }
+  }
+
   async function update(id: string, name: string, description: string) {
     const updated = await authed().patch(`api/v1/projects/${id}`, { json: { name, description } }).json<any>()
     const i = raw.value.findIndex((p) => p.id === id)
@@ -292,7 +307,7 @@ export const useProjectsStore = defineStore('projects', () => {
     if (s) s.status = 'stopped'
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, removeServiceDomain, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, removeServiceDomain, rootDomains, fetchRootDomains, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

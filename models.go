@@ -84,20 +84,25 @@ type Service struct {
 	ComposePath   string `gorm:"size:512;default:''" json:"compose_path"`
 	Description   string `gorm:"size:512;default:''" json:"description"`
 	// Coolify-style configuration
-	DockerOptions   string          `gorm:"size:512;default:''" json:"docker_options"` // custom docker options e.g. --privileged
-	PortsExposes    string          `gorm:"size:255;default:''" json:"ports_exposes"`  // e.g. 8080
-	PortMappings    []string        `gorm:"serializer:json" json:"port_mappings"`      // e.g. ["3000:3000"]
-	NetworkAliases  []string        `gorm:"serializer:json" json:"network_aliases"`
-	BasicAuthEnable bool            `gorm:"default:false" json:"basic_auth_enable"`
-	BasicAuthUser   string          `gorm:"size:255;default:''" json:"basic_auth_user"`
-	BasicAuthPass   string          `gorm:"size:255;default:''" json:"basic_auth_pass"`
-	Status          string          `gorm:"size:32;not null;default:'stopped'" json:"status"`
-	CPU             float64         `gorm:"default:0" json:"cpu"`
-	Memory          int64           `gorm:"default:0" json:"memory"` // MB
-	Ports           []string        `gorm:"serializer:json" json:"ports"`
-	Domains         []ServiceDomain `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	DockerOptions   string   `gorm:"size:512;default:''" json:"docker_options"` // custom docker options e.g. --privileged
+	PortsExposes    string   `gorm:"size:255;default:''" json:"ports_exposes"`  // e.g. 8080
+	PortMappings    []string `gorm:"serializer:json" json:"port_mappings"`      // e.g. ["3000:3000"]
+	NetworkAliases  []string `gorm:"serializer:json" json:"network_aliases"`
+	BasicAuthEnable bool     `gorm:"default:false" json:"basic_auth_enable"`
+	BasicAuthUser   string   `gorm:"size:255;default:''" json:"basic_auth_user"`
+	BasicAuthPass   string   `gorm:"size:255;default:''" json:"basic_auth_pass"`
+	// Replicas: fix (single count) or range (min/max, autoscaling)
+	ReplicasMode string          `gorm:"size:16;default:'fix'" json:"replicas_mode"` // fix | range
+	Replicas     int             `gorm:"default:1" json:"replicas"`
+	ReplicasMin  int             `gorm:"default:1" json:"replicas_min"`
+	ReplicasMax  int             `gorm:"default:1" json:"replicas_max"`
+	Status       string          `gorm:"size:32;not null;default:'stopped'" json:"status"`
+	CPU          float64         `gorm:"default:0" json:"cpu"`
+	Memory       int64           `gorm:"default:0" json:"memory"` // MB
+	Ports        []string        `gorm:"serializer:json" json:"ports"`
+	Domains      []ServiceDomain `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 // ServiceDomain is a domain/subdomain attached to a single Service,

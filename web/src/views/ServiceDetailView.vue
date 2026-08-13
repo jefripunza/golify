@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -78,31 +78,62 @@ const form = reactive({
   name: '',
   description: '',
   image: '',
-  imageTag: '',
+  imageTag: 'latest',
   dockerOptions: '',
   portMappings: '',
   basicAuthEnable: false,
   basicAuthUser: '',
   basicAuthPass: '',
+  replicasMode: 'fix' as 'fix' | 'range',
+  replicas: 1,
+  replicasMin: 1,
+  replicasMax: 1,
 })
 const saving = ref(false)
 const saveError = ref('')
 const saveOk = ref(false)
+
+// Split a docker ref like "nginx:latest" or "ghcr.io/org/app:v1" into
+// image name + tag (only split at the LAST colon if it's not a registry port).
+function splitImageRef(ref: string): { image: string; tag: string } {
+  const r = (ref || '').trim()
+  if (!r) return { image: '', tag: 'latest' }
+  // Registry with port (e.g. localhost:5000/nginx) — the first segment
+  // before "/" may contain ":" so only the LAST colon before a "/"-less
+  // tail is a tag separator.
+  const lastColon = r.lastIndexOf(':')
+  const lastSlash = r.lastIndexOf('/')
+  if (lastColon > lastSlash && lastColon > 0) {
+    return { image: r.slice(0, lastColon), tag: r.slice(lastColon + 1) }
+  }
+  return { image: r, tag: 'latest' }
+}
 
 function initForm() {
   const s = service.value
   if (!s) return
   form.name = s.name
   form.description = s.description ?? ''
-  form.image = s.image ?? ''
-  form.imageTag = s.imageTag ?? 'latest'
+  const { image, tag } = splitImageRef(s.image ?? '')
+  form.image = image
+  form.imageTag = s.imageTag && s.imageTag !== 'latest' ? s.imageTag : tag
   form.dockerOptions = s.dockerOptions ?? ''
   form.portMappings = (s.portMappings ?? []).join(', ')
   form.basicAuthEnable = s.basicAuthEnable ?? false
   form.basicAuthUser = s.basicAuthUser ?? ''
   form.basicAuthPass = s.basicAuthPass ?? ''
+  form.replicasMode = s.replicasMode === 'range' ? 'range' : 'fix'
+  form.replicas = s.replicas ?? 1
+  form.replicasMin = s.replicasMin ?? 1
+  form.replicasMax = s.replicasMax ?? 1
 }
 watch(() => service.value?.id, () => { if (service.value) initForm() }, { immediate: true })
+
+// Rebuild the full image ref from image + tag on save.
+function fullImageRef(): string {
+  if (!form.image.trim()) return form.image.trim()
+  return `${form.image.trim()}:${form.imageTag.trim() || 'latest'}`
+}
 
 async function saveGeneral() {
   saving.value = true
@@ -112,13 +143,17 @@ async function saveGeneral() {
     await store.updateService(projectId.value, envId.value, serviceId.value, {
       name: form.name,
       description: form.description,
-      image: form.image,
-      image_tag: form.imageTag,
+      image: fullImageRef(),
+      image_tag: form.imageTag.trim() || 'latest',
       docker_options: form.dockerOptions,
       port_mappings: form.portMappings.split(',').map((s) => s.trim()).filter(Boolean),
       basic_auth_enable: form.basicAuthEnable,
       basic_auth_user: form.basicAuthUser,
       basic_auth_pass: form.basicAuthPass,
+      replicas_mode: form.replicasMode,
+      replicas: Number(form.replicas) || 1,
+      replicas_min: Number(form.replicasMin) || 1,
+      replicas_max: Number(form.replicasMax) || 1,
     })
     saveOk.value = true
     setTimeout(() => (saveOk.value = false), 2500)
@@ -129,15 +164,39 @@ async function saveGeneral() {
   }
 }
 
-// ─── Service domains (many domains/subdomains per service, each → port) ───
-const newDomain = reactive({ host: '', port: '80' })
+// ─── Root domains (dropdown for subdomain picker) ─────────────────────────
+const rootDomains = computed(() => store.rootDomains)
+const selectedRootDomain = ref('')
+onMounted(() => {
+  store.fetchRootDomains()
+})
+function availableRootDomains(): string[] {
+  const roots = rootDomains.value
+  if (selectedRootDomain.value && !roots.includes(selectedRootDomain.value)) {
+    return [selectedRootDomain.value, ...roots]
+  }
+  return roots
+}
+
+// ─── Service domains (subdomain + root domain + port → host) ──────────────
+const newDomain = reactive({ subdomain: '', port: '80' })
 const domainError = ref('')
+function buildDomainHost(): string {
+  const sub = newDomain.subdomain.trim().replace(/^\.+/, '')
+  const root = selectedRootDomain.value.trim().replace(/^\.+/, '')
+  if (!root) return sub
+  return sub ? `${sub}.${root}` : root
+}
 async function addDomain() {
-  if (!newDomain.host.trim()) return
+  const host = buildDomainHost()
+  if (!host) {
+    domainError.value = 'Fill the subdomain or pick a root domain first.'
+    return
+  }
   domainError.value = ''
   try {
-    await store.addServiceDomain(projectId.value, envId.value, serviceId.value, newDomain.host.trim(), newDomain.port.trim() || '80')
-    newDomain.host = ''
+    await store.addServiceDomain(projectId.value, envId.value, serviceId.value, host, newDomain.port.trim() || '80')
+    newDomain.subdomain = ''
     newDomain.port = '80'
   } catch (e: any) {
     domainError.value = e?.message || 'Failed to add domain'
@@ -149,6 +208,33 @@ async function removeDomain(did: string) {
   } catch (e: any) {
     domainError.value = e?.message || 'Failed to remove domain'
   }
+}
+
+// ─── Network port mappings (2 fields + add button) ────────────────────────
+const newMapping = reactive({ from: '', to: '' })
+const mappingError = ref('')
+function addMapping() {
+  const from = newMapping.from.trim()
+  const to = newMapping.to.trim()
+  if (!from) {
+    mappingError.value = 'Fill the host port.'
+    return
+  }
+  mappingError.value = ''
+  const entry = to ? `${from}:${to}` : from
+  const existing = form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)
+  if (existing.includes(entry)) {
+    mappingError.value = 'Mapping already exists.'
+    return
+  }
+  existing.push(entry)
+  form.portMappings = existing.join(', ')
+  newMapping.from = ''
+  newMapping.to = ''
+}
+function removeMapping(entry: string) {
+  const existing = form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)
+  form.portMappings = existing.filter((m) => m !== entry).join(', ')
 }
 
 // ─── Status + actions ─────────────────────────────────────────────────────
@@ -368,27 +454,39 @@ const sectionIcons: Record<string, string> = {
               <CardContent class="grid gap-3">
                 <div class="grid gap-1.5">
                   <Label>Docker Image</Label>
-                  <Input v-model="form.image" placeholder="jefriherditriyanto/openclaw-for-9router" />
+                  <Input v-model="form.image" placeholder="nginx" />
                 </div>
                 <div class="grid gap-1.5">
                   <Label class="flex items-center gap-1">Docker Image Tag or Hash <Info class="size-3 text-muted-foreground" /></Label>
-                  <Input v-model="form.imageTag" placeholder="0.0.9" />
+                  <Input v-model="form.imageTag" placeholder="latest" />
                 </div>
               </CardContent>
             </Card>
 
-            <!-- Domains (col 6) -->
+            <!-- Domains (col 6) — subdomain + root domain dropdown + port -->
             <Card class="col-span-12 md:col-span-6">
               <CardHeader class="pb-2">
                 <CardDescription class="flex items-center gap-1">
                   Domains <Info class="size-3" />
                 </CardDescription>
-                <div class="flex flex-col gap-2 sm:flex-row">
-                  <Input v-model="newDomain.host" placeholder="app.example.com" class="flex-1" />
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-col gap-2 sm:flex-row">
+                    <Input v-model="newDomain.subdomain" placeholder="subdomain" class="flex-1" />
+                    <select
+                      v-model="selectedRootDomain"
+                      class="h-9 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <option value="">— domain —</option>
+                      <option v-for="d in availableRootDomains()" :key="d" :value="d">{{ d }}</option>
+                    </select>
+                  </div>
                   <div class="flex gap-2">
                     <Input v-model="newDomain.port" placeholder="80" class="w-20" />
-                    <Button size="sm" variant="outline" @click="addDomain"><Plus class="size-4" /></Button>
+                    <Button size="sm" variant="outline" @click="addDomain"><Plus class="size-4" /> Add</Button>
                   </div>
+                  <p class="text-xs text-muted-foreground">
+                    Preview: <span class="font-mono">{{ buildDomainHost() || '—' }}</span>
+                  </p>
                 </div>
                 <p v-if="domainError" class="text-xs text-destructive">{{ domainError }}</p>
               </CardHeader>
@@ -404,16 +502,26 @@ const sectionIcons: Record<string, string> = {
               </CardContent>
             </Card>
 
-            <!-- Network (col 6) — only Port Mappings remains -->
+            <!-- Network (col 6) — port mapping 2 fields + add button -->
             <Card class="col-span-12 md:col-span-6">
               <CardHeader class="pb-2">
                 <CardTitle class="text-base">Network</CardTitle>
               </CardHeader>
               <CardContent class="grid gap-3">
-                <div class="grid gap-1.5">
-                  <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
-                  <Input v-model="form.portMappings" placeholder="3000:3000 (comma separated)" />
+                <Label class="flex items-center gap-1">Port Mappings <Info class="size-3 text-muted-foreground" /></Label>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <Input v-model="newMapping.from" placeholder="host port (3000)" class="flex-1" />
+                  <div class="flex gap-2">
+                    <Input v-model="newMapping.to" placeholder="container port (3000)" class="flex-1" />
+                    <Button size="sm" variant="outline" @click="addMapping"><Plus class="size-4" /> Add</Button>
+                  </div>
                 </div>
+                <p v-if="mappingError" class="text-xs text-destructive">{{ mappingError }}</p>
+                <div v-for="m in form.portMappings.split(',').map((s) => s.trim()).filter(Boolean)" :key="m" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                  <span class="truncate font-mono">{{ m }}</span>
+                  <button class="text-destructive hover:text-destructive/80" @click="removeMapping(m)"><Trash2 class="size-3.5" /></button>
+                </div>
+                <p v-if="!form.portMappings.split(',').map((s) => s.trim()).filter(Boolean).length" class="text-xs text-muted-foreground">No port mappings yet.</p>
               </CardContent>
             </Card>
 
@@ -430,8 +538,8 @@ const sectionIcons: Record<string, string> = {
               </CardContent>
             </Card>
 
-            <!-- HTTP Basic Authentication (col 12) -->
-            <Card class="col-span-12">
+            <!-- HTTP Basic Authentication (col 6) + Replicas (col 6) -->
+            <Card class="col-span-12 md:col-span-6">
               <CardHeader class="pb-2">
                 <CardTitle class="flex items-center gap-2 text-base">HTTP Basic Authentication <Info class="size-3 text-muted-foreground" /></CardTitle>
               </CardHeader>
@@ -448,6 +556,49 @@ const sectionIcons: Record<string, string> = {
                   <div class="grid gap-1.5">
                     <Label>Password *</Label>
                     <Input v-model="form.basicAuthPass" type="password" placeholder="••••••" />
+                  </div>
+                </template>
+              </CardContent>
+            </Card>
+
+            <!-- Replicas (col 6) — fix or range -->
+            <Card class="col-span-12 md:col-span-6">
+              <CardHeader class="pb-2">
+                <CardTitle class="text-base">Replicas</CardTitle>
+              </CardHeader>
+              <CardContent class="grid gap-3">
+                <div class="flex gap-1 rounded-md border p-1">
+                  <button
+                    class="flex-1 rounded px-3 py-1.5 text-sm transition-colors"
+                    :class="form.replicasMode === 'fix' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    @click="form.replicasMode = 'fix'"
+                  >
+                    Fix
+                  </button>
+                  <button
+                    class="flex-1 rounded px-3 py-1.5 text-sm transition-colors"
+                    :class="form.replicasMode === 'range' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    @click="form.replicasMode = 'range'"
+                  >
+                    Range (auto)
+                  </button>
+                </div>
+                <template v-if="form.replicasMode === 'fix'">
+                  <div class="grid gap-1.5">
+                    <Label>Replicas *</Label>
+                    <Input v-model.number="form.replicas" type="number" min="1" placeholder="1" />
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="grid gap-1.5">
+                      <Label>Min *</Label>
+                      <Input v-model.number="form.replicasMin" type="number" min="1" placeholder="1" />
+                    </div>
+                    <div class="grid gap-1.5">
+                      <Label>Max *</Label>
+                      <Input v-model.number="form.replicasMax" type="number" min="1" placeholder="5" />
+                    </div>
                   </div>
                 </template>
               </CardContent>

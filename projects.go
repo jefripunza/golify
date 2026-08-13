@@ -51,6 +51,10 @@ func registerProjects(r fiber.Router) {
 						"basic_auth_enable": s.BasicAuthEnable,
 						"basic_auth_user":   s.BasicAuthUser,
 						"basic_auth_pass":   s.BasicAuthPass,
+						"replicas_mode":     s.ReplicasMode,
+						"replicas":          s.Replicas,
+						"replicas_min":      s.ReplicasMin,
+						"replicas_max":      s.ReplicasMax,
 						"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 						"ports": s.Ports, "created_at": s.CreatedAt,
 						"updated_at": s.UpdatedAt,
@@ -158,6 +162,10 @@ func registerProjects(r fiber.Router) {
 					"basic_auth_enable": s.BasicAuthEnable,
 					"basic_auth_user":   s.BasicAuthUser,
 					"basic_auth_pass":   s.BasicAuthPass,
+					"replicas_mode":     s.ReplicasMode,
+					"replicas":          s.Replicas,
+					"replicas_min":      s.ReplicasMin,
+					"replicas_max":      s.ReplicasMax,
 					"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
 					"domains": func() []fiber.Map {
@@ -415,6 +423,10 @@ func registerProjects(r fiber.Router) {
 			BasicAuthEnable *bool     `json:"basic_auth_enable"`
 			BasicAuthUser   *string   `json:"basic_auth_user"`
 			BasicAuthPass   *string   `json:"basic_auth_pass"`
+			ReplicasMode    *string   `json:"replicas_mode"`
+			Replicas        *int      `json:"replicas"`
+			ReplicasMin     *int      `json:"replicas_min"`
+			ReplicasMax     *int      `json:"replicas_max"`
 		}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
@@ -454,6 +466,18 @@ func registerProjects(r fiber.Router) {
 		}
 		if body.BasicAuthPass != nil {
 			svc.BasicAuthPass = *body.BasicAuthPass
+		}
+		if body.ReplicasMode != nil && (*body.ReplicasMode == "fix" || *body.ReplicasMode == "range") {
+			svc.ReplicasMode = *body.ReplicasMode
+		}
+		if body.Replicas != nil && *body.Replicas >= 1 {
+			svc.Replicas = *body.Replicas
+		}
+		if body.ReplicasMin != nil && *body.ReplicasMin >= 1 {
+			svc.ReplicasMin = *body.ReplicasMin
+		}
+		if body.ReplicasMax != nil && *body.ReplicasMax >= *body.ReplicasMin {
+			svc.ReplicasMax = *body.ReplicasMax
 		}
 		if err := db.Save(&svc).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
