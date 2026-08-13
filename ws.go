@@ -135,9 +135,10 @@ func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 		deployHandler(ctx)
 		return true
 	}
-	// /api/ws/log/:serviceId — service runtime logs
-	if serviceID, ok := matchWSPath(rel, "/log/"); ok {
-		_ = serviceID
+	// /api/ws/log/:serviceId/:containerId — service runtime logs (per replica)
+	// matchWSPath would reject ids containing "/", so route by prefix and let
+	// logHandler parse the container id from the path itself.
+	if strings.HasPrefix(rel, "/log/") {
 		logHandler(ctx)
 		return true
 	}

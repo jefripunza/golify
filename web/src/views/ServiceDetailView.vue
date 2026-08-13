@@ -36,6 +36,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Copy,
+  Download,
+  RefreshCw,
 } from '@lucide/vue'
 
 const route = useRoute()
@@ -433,8 +436,7 @@ watch(() => service.value?.status, (s) => {
   }
 })
 onBeforeUnmount(() => {
-  logWS?.close()
-  logWS = null
+  closeAllLogWS()
   ws?.close()
   ws = null
   term?.dispose()
@@ -442,11 +444,132 @@ onBeforeUnmount(() => {
   fit = null
 })
 
-// ─── Logs (mock) ──────────────────────────────────────────────────────────
-const logs = ref<string[]>([
-  `[${new Date().toISOString()}] service ${service.value?.name ?? ''} — stopped`,
-  'run `start` to boot the container',
-])
+// ─── Logs: accordion per replica/container, each with its OWN websocket ────
+interface LogContainer {
+  id: string
+  name: string
+  status: string
+  running: boolean
+  ports: string
+  expanded: boolean
+  lines: string[]      // accumulated log lines for this container
+  ws: WebSocket | null
+  loading: boolean
+  error: string
+}
+
+const containers = ref<LogContainer[]>([])
+const containersLoading = ref(false)
+const logSearch = ref('')
+
+// fetch replica containers for the service (podman ps, filtered by golify-<name>)
+async function loadContainers() {
+  if (!service.value) return
+  containersLoading.value = true
+  try {
+    const auth = getAuth()
+    const res = await fetch(`/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}/containers`, {
+      headers: { Authorization: `Bearer ${auth?.token ?? ''}` },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const rows: any[] = await res.json()
+    // merge with existing ws state (keep ws open if already expanded)
+    const existing = new Map(containers.value.map(c => [c.id, c]))
+    containers.value = rows.map(r => {
+      const prev = existing.get(r.id)
+      return {
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        running: r.running,
+        ports: r.ports,
+        expanded: prev?.expanded ?? false,
+        lines: prev?.lines ?? [],
+        ws: prev?.ws ?? null,
+        loading: false,
+        error: prev?.error ?? '',
+      }
+    })
+    // close WS for containers that disappeared
+    for (const [id, c] of existing) {
+      if (!rows.some(r => r.id === id)) c.ws?.close()
+    }
+  } catch (e: any) {
+    containersError.value = e?.message ?? 'Failed to load containers'
+  } finally {
+    containersLoading.value = false
+  }
+}
+
+const containersError = ref('')
+
+// toggle accordion: expand → connect WS; collapse → close WS
+function toggleContainer(c: LogContainer) {
+  c.expanded = !c.expanded
+  if (c.expanded) {
+    connectContainerLogs(c)
+  } else {
+    c.ws?.close()
+    c.ws = null
+  }
+}
+
+// open ONE websocket per container (replica) streaming podman logs -f
+function connectContainerLogs(c: LogContainer) {
+  if (!service.value || !c.running) return
+  c.ws?.close()
+  c.lines = []
+  c.loading = true
+  c.error = ''
+  const auth = getAuth()
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const url = `${proto}//${location.host}/api/ws/log/${encodeURIComponent(serviceId.value)}/${encodeURIComponent(c.id)}?token=${encodeURIComponent(auth?.token ?? '')}`
+  try { c.ws = new WebSocket(url) } catch { c.ws = null }
+  if (!c.ws) {
+    c.error = '[WS not available]'
+    c.loading = false
+    return
+  }
+  c.ws.onopen = () => { c.loading = false }
+  c.ws.onmessage = (ev) => {
+    c.lines = [...c.lines, String(ev.data)]
+    if (c.lines.length > 500) c.lines = c.lines.slice(-500)
+  }
+  c.ws.onerror = () => {
+    c.error = '[connection error]'
+    c.loading = false
+  }
+  c.ws.onclose = () => {
+    c.loading = false
+    c.ws = null
+  }
+}
+
+function closeAllLogWS() {
+  for (const c of containers.value) {
+    c.ws?.close()
+    c.ws = null
+  }
+}
+
+const filteredLines = (c: LogContainer) =>
+  logSearch.value ? c.lines.filter(l => l.toLowerCase().includes(logSearch.value.toLowerCase())) : c.lines
+
+function copyContainerLog(c: LogContainer) {
+  navigator.clipboard?.writeText(c.lines.join('\n')).catch(() => {})
+}
+function downloadContainerLog(c: LogContainer) {
+  const blob = new Blob([c.lines.join('\n')], { type: 'text/plain' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `${c.name}.log`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+function refreshContainerLog(c: LogContainer) {
+  c.lines = []
+  connectContainerLogs(c)
+}
 
 // ─── Danger Zone: delete service (cascade) ────────────────────────────────
 const deletingService = ref(false)
@@ -584,26 +707,9 @@ watch(activeTab, (tab) => {
 })
 
 // ─── Logs (live, gated by service status) ─────────────────────────────────
-let logWS: WebSocket | null = null
 function connectLogs() {
-  logWS?.close()
-  logWS = null
-  logs.value = []
-  if (service.value?.status !== 'running') return
-  const auth = getAuth()
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${location.host}/api/ws/log/${encodeURIComponent(serviceId.value)}?token=${encodeURIComponent(auth?.token ?? '')}`
-  try { logWS = new WebSocket(url) } catch { logWS = null }
-  if (!logWS) {
-    logs.value = ['[WS not available]']
-    return
-  }
-  logWS.onmessage = (ev) => {
-    logs.value = [...logs.value, String(ev.data)]
-    if (logs.value.length > 200) logs.value = logs.value.slice(-200)
-  }
-  logWS.onclose = () => { /* keep */ }
-  logWS.onerror = () => logs.value = [...logs.value, '[connection error]']
+  // now: fetch replica containers; WS opens per-accordion on expand
+  void loadContainers()
 }
 
 // ─── Icons for sidebar ────────────────────────────────────────────────────
@@ -1079,29 +1185,72 @@ const sectionIcons: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Logs (gated: only when service is running) -->
+    <!-- Logs: accordion per replica/container, one WS per accordion -->
     <div v-else-if="activeTab === 'logs'">
-      <Card>
-        <CardHeader>
-          <CardTitle>Logs</CardTitle>
-          <CardDescription v-if="service.status !== 'running'">
-            Service is <span class="text-yellow-500">{{ service.status }}</span> — start the service to see live logs.
-          </CardDescription>
-          <CardDescription v-else>Streaming logs from the container…</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div v-if="service.status === 'running'">
-            <div class="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <span class="inline-block size-2 rounded-full bg-green-500" /> Live
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-lg font-semibold">Logs</h2>
+        <Button size="sm" variant="outline" @click="loadContainers">
+          <RotateCw class="mr-1 size-3" />Refresh
+        </Button>
+      </div>
+      <p v-if="service.status !== 'running'" class="mt-1 text-sm text-muted-foreground">
+        Service is <span class="text-yellow-500">{{ service.status }}</span> — start the service to see live logs.
+      </p>
+
+      <div v-if="containersLoading" class="mt-3 text-sm text-muted-foreground">Loading containers…</div>
+      <p v-else-if="containersError" class="mt-3 text-sm text-destructive">{{ containersError }}</p>
+
+      <div v-else-if="containers.length" class="mt-3 grid gap-2">
+        <div v-for="c in containers" :key="c.id" class="overflow-hidden rounded-md border bg-card">
+          <!-- accordion header -->
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+            @click="toggleContainer(c)"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <ChevronDown class="size-4 shrink-0 text-muted-foreground transition-transform" :class="c.expanded ? '' : '-rotate-90'" />
+              <span class="inline-block size-2 shrink-0 rounded-full" :class="c.running ? 'bg-green-500' : 'bg-yellow-500'" />
+              <span class="truncate font-mono text-sm">{{ c.name }}</span>
+            </span>
+            <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+              <span v-if="c.ports" class="hidden sm:inline">{{ c.ports }}</span>
+              <span :class="c.running ? 'text-green-500' : 'text-yellow-500'">{{ c.running ? 'running' : 'stopped' }}</span>
+            </span>
+          </button>
+
+          <!-- accordion body: one WS per container -->
+          <div v-if="c.expanded" class="border-t bg-muted/30">
+            <div class="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
+              <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span class="inline-block size-1.5 rounded-full" :class="c.ws ? 'bg-green-500' : 'bg-gray-400'" />
+                {{ c.ws ? 'Live' : 'Disconnected' }}
+              </span>
+              <input
+                v-model="logSearch"
+                placeholder="Find in logs"
+                class="ml-auto h-7 w-40 rounded border bg-background px-2 font-mono text-xs outline-none"
+              />
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Copy" @click="copyContainerLog(c)">
+                <Copy class="size-3.5" />
+              </button>
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Download" @click="downloadContainerLog(c)">
+                <Download class="size-3.5" />
+              </button>
+              <button class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground" title="Refresh" @click="refreshContainerLog(c)">
+                <RefreshCw class="size-3.5" />
+              </button>
             </div>
-            <pre class="max-h-80 overflow-auto rounded bg-muted p-3 font-mono text-xs leading-relaxed"><code>{{ logs.join('\n') || 'Connecting…' }}</code></pre>
+            <div v-if="c.loading" class="px-3 py-2 text-xs text-muted-foreground">Connecting…</div>
+            <pre v-else class="max-h-80 overflow-auto p-3 font-mono text-xs leading-relaxed"><code>{{ filteredLines(c).join('\n') || c.error || 'No log output yet.' }}</code></pre>
           </div>
-          <div v-else class="flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
-            <ScrollText class="size-6 text-muted-foreground" />
-            <p class="text-sm text-muted-foreground">No logs yet — the service hasn't been started.</p>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      <div v-else-if="service.status === 'running'" class="mt-3 flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
+        <ScrollText class="size-6 text-muted-foreground" />
+        <p class="text-sm text-muted-foreground">No containers found — deploy the service first.</p>
+      </div>
     </div>
 
     <!-- Terminal (gated: only when service is running) -->

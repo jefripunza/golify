@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os/exec"
@@ -33,6 +35,47 @@ import (
 // registerDeployments wires deployment routes under the authenticated
 // project/env/service router group.
 func registerDeployments(auth fiber.Router) {
+	// GET replica containers for a service (one container per replica)
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/containers", func(c fiber.Ctx) error {
+		sid := c.Params("serviceId")
+		var svc Service
+		if err := db.First(&svc, "id = ?", sid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "service not found"})
+		}
+		// container name convention from deployments.go: golify-<name>
+		base := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
+		out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}	{{.Status}}	{{.Ports}}").CombinedOutput()
+		if err != nil {
+			// podman not available → empty list
+			return c.JSON([]fiber.Map{})
+		}
+		rows := []fiber.Map{}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			parts := strings.SplitN(line, "	", 3)
+			name := parts[0]
+			status := ""
+			ports := ""
+			if len(parts) > 1 {
+				status = parts[1]
+			}
+			if len(parts) > 2 {
+				ports = parts[2]
+			}
+			running := strings.Contains(status, "Up")
+			rows = append(rows, fiber.Map{
+				"id":      name,
+				"name":    name,
+				"status":  status,
+				"running": running,
+				"ports":   ports,
+			})
+		}
+		return c.JSON(rows)
+	})
+
 	// GET deployment history
 	auth.Get("/:projectId/environments/:envId/services/:serviceId/deployments", func(c fiber.Ctx) error {
 		sid := c.Params("serviceId")
@@ -292,27 +335,95 @@ func deployHandler(ctx *fasthttp.RequestCtx) {
 	})
 }
 
-// logHandler streams service runtime logs over WS. Since containers aren't
-// wired yet, it emits a placeholder line telling the user the service log
-// stream is live, then waits (heartbeat) — the channel stays open.
+// logHandler streams a container's runtime logs over WS.
+// Path: /api/ws/log/:serviceId/:containerId — the containerId is the podman
+// container name (e.g. "golify-webserver" or "golify-webserver-2" for
+// replica #2). Each replica has its OWN websocket connection.
 func logHandler(ctx *fasthttp.RequestCtx) {
 	if !authWS(ctx) {
 		return
 	}
+	path := string(ctx.Path())
+	// extract :serviceId/:containerId after the last "/log/"
+	rest := ""
+	if i := strings.LastIndex(path, "/log/"); i >= 0 {
+		rest = path[i+len("/log/"):]
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		ctx.SetStatusCode(http.StatusBadRequest)
+		ctx.SetBodyString("expected /api/ws/log/:serviceId/:containerId")
+		return
+	}
+	containerID := parts[1]
+
 	upgrader := websocket.FastHTTPUpgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
 		CheckOrigin:     func(_ *fasthttp.RequestCtx) bool { return true },
 	}
 	upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 		defer conn.Close()
-		writeWS(conn, []byte("[log] connected — streaming logs for service (live)\r\n"))
-		// keepalive loop — real container logs will replace this later
-		tick := time.NewTicker(30 * time.Second)
-		defer tick.Stop()
-		for range tick.C {
-			writeWS(conn, []byte("[log] alive\r\n"))
+
+		// sanity: does the container exist?
+		out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+containerID, "--format", "{{.Names}}").CombinedOutput()
+		exists := false
+		for _, name := range strings.Fields(string(out)) {
+			if name == containerID {
+				exists = true
+				break
+			}
 		}
+		if err != nil || !exists {
+			writeWS(conn, []byte(fmt.Sprintf("[log] container %q not found — deploy/start the service first\r\n", containerID)))
+			// keep the connection open briefly so the message flushes, then close
+			time.Sleep(300 * time.Millisecond)
+			return
+		}
+
+		writeWS(conn, []byte(fmt.Sprintf("[log] connected — streaming %s (live)\r\n", containerID)))
+		cmd := exec.Command("podman", "logs", "-f", containerID)
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			writeWS(conn, []byte("[log] pipe error: "+err.Error()+"\r\n"))
+			return
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			writeWS(conn, []byte("[log] pipe error: "+err.Error()+"\r\n"))
+			return
+		}
+		if err := cmd.Start(); err != nil {
+			writeWS(conn, []byte("[log] start error: "+err.Error()+"\r\n"))
+			return
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		stream := func(r io.Reader) {
+			defer wg.Done()
+			sc := bufio.NewScanner(r)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				writeWS(conn, []byte(sc.Text()+"\r\n"))
+			}
+		}
+		go stream(stdout)
+		go stream(stderr)
+
+		// client close → kill the log process
+		go func() {
+			for {
+				if _, _, err := conn.ReadMessage(); err != nil {
+					cmd.Process.Kill()
+					return
+				}
+			}
+		}()
+
+		cmd.Wait()
+		wg.Wait()
+		writeWS(conn, []byte("[log] stream ended\r\n"))
 	})
 }
 
