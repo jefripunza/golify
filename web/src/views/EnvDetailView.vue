@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useProjectsStore } from '@/stores'
 import { Box, ArrowRight, Globe } from '@lucide/vue'
+import type { Service } from '@/lib/types'
 
 const route = useRoute()
 const store = useProjectsStore()
@@ -19,6 +20,18 @@ const projectId = computed(() => String(route.params.projectId))
 const envId = computed(() => String(route.params.envId))
 const project = computed(() => store.get(projectId.value))
 const env = computed(() => store.getEnv(projectId.value, envId.value))
+
+// Dummy services while the backend service CRUD is not wired up yet
+// (per Pak Jefri: "service jangan dulu, dummy aja dulu service").
+const dummyServices: Service[] = [
+  { id: 'svc-dummy-api', name: 'api', kind: 'container', image: 'example/api:latest', status: 'running', cpu: 2.4, memory: 128, ports: ['3000'] },
+  { id: 'svc-dummy-web', name: 'web', kind: 'container', image: 'example/web:latest', status: 'running', cpu: 1.1, memory: 64, ports: ['8080'] },
+  { id: 'svc-dummy-db', name: 'db', kind: 'container', image: 'postgres:16', status: 'stopped', cpu: 0, memory: 256, ports: ['5432'] },
+]
+
+const services = computed<Service[]>(() =>
+  env.value?.services?.length ? env.value.services : dummyServices,
+)
 
 function statusColor(s: string) {
   switch (s) {
@@ -52,7 +65,7 @@ function statusColor(s: string) {
 
     <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
       <RouterLink
-        v-for="svc in env.services"
+        v-for="svc in services"
         :key="svc.id"
         :to="`/project/${project.id}/environment/${env.id}/service/${svc.id}`"
         class="block transition-transform hover:scale-[1.01]"

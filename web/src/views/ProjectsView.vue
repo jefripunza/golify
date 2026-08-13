@@ -136,7 +136,6 @@ async function confirmDelete() {
             <CardDescription class="line-clamp-2 min-h-[2.5em]">{{ p.description || '—' }}</CardDescription>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
-            <span class="font-mono">{{ p.id }}</span>
             <div class="flex items-center gap-1">
               <Button variant="ghost" size="sm" type="button" @click.stop="openEdit(p)">
                 <Pencil class="size-3" />

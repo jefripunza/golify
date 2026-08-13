@@ -34,25 +34,15 @@ func seedProjects(db *gorm.DB) {
 	sawang := Project{Name: "sawang.tech-website", Description: "Company website & landing pages", SourceID: "src_github_org"}
 	sawangEnv := Environment{Name: "production", IsProduction: true}
 	sawangEnv.Domains = []Domain{{Host: "sawang.tech"}, {Host: "www.sawang.tech"}}
-	sawangEnv.Services = []Service{
-		{Name: "landing", Kind: "container", Image: "ghcr.io/sawang-source-code/sawang-tech-landing:latest", Status: "running", CPU: 3.2, Memory: 96, Ports: []string{"3000"}},
-	}
 	sawang.Envs = []Environment{sawangEnv}
 
 	golify := Project{Name: "golify", Description: "Self-hosted PaaS-style dashboard (this project)", SourceID: "src_github_org"}
 	golifyEnv := Environment{Name: "production", IsProduction: true}
 	golifyEnv.Domains = []Domain{{Host: "golify.sawang.tech"}}
-	golifyEnv.Services = []Service{
-		{Name: "golify-server", Kind: "container", Image: "jefripunza/golify:latest", Status: "running", CPU: 1.4, Memory: 64, Ports: []string{"3000"}},
-		{Name: "golify-db", Kind: "container", Image: "ghcr.io/vectorize-io/hindsight:latest-slim", Status: "running", CPU: 0.6, Memory: 128, Ports: []string{"9999"}},
-	}
 	golify.Envs = []Environment{golifyEnv}
 
 	hindsight := Project{Name: "hindsight-agent-memory", Description: "Second brain memory retrieval for agents", SourceID: "src_github_org"}
-	hindsightEnv := Environment{Name: "staging", IsProduction: false}
-	hindsightEnv.Services = []Service{
-		{Name: "hindsight-api", Kind: "compose", ComposePath: "compose.yml", Status: "building", CPU: 8.4, Memory: 256, Ports: []string{"8686", "8676"}},
-	}
+	hindsightEnv := Environment{Name: "production", IsProduction: true}
 	hindsight.Envs = []Environment{hindsightEnv}
 
 	for _, p := range []Project{sawang, golify, hindsight} {

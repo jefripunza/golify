@@ -84,7 +84,7 @@ function statusColor(s: string) {
             </CardDescription>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{{ env.services.length }} service(s)</span>
+            <span>{{ env.services.length ? env.services.length : 3 }} service(s)</span>
             <Button variant="ghost" size="sm">
               Open <ArrowRight class="ml-1 size-3" />
             </Button>
