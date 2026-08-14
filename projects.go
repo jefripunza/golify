@@ -712,6 +712,52 @@ func registerProjects(r fiber.Router) {
 		return c.JSON(fiber.Map{"deleted": nid})
 	})
 
+	// ─── Scale service replicas (container instances) ──────────────────────
+	// POST { replicas: N } — N >= 1. Only takes effect while the service is
+	// running (containers are created/removed to match N). If the service is
+	// stopped, only the DB value is updated — the replicas are applied on the
+	// next start/deploy.
+	auth.Post("/:projectId/environments/:envId/services/:serviceId/scale", func(c fiber.Ctx) error {
+		sid := c.Params("serviceId")
+		var s Service
+		if err := db.First(&s, "id = ?", sid).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "service not found"})
+		}
+		var body struct {
+			Replicas *int `json:"replicas"`
+		}
+		if err := c.Bind().JSON(&body); err != nil || body.Replicas == nil {
+			return c.Status(400).JSON(fiber.Map{"error": "replicas required"})
+		}
+		n := *body.Replicas
+		if n < 1 {
+			return c.Status(400).JSON(fiber.Map{"error": "replicas must be >= 1"})
+		}
+		if s.Image == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "service has no image to scale"})
+		}
+
+		// Persist the desired count first (so a crash mid-scale still saves it).
+		s.Replicas = n
+		if err := db.Save(&s).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		result := fiber.Map{"service": s, "scaled": false}
+		if s.Status == "running" {
+			// Apply: scale the running containers to match n.
+			scaled, err := scaleContainers(s, n)
+			result["scaled"] = scaled
+			if err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": err.Error(), "service": s})
+			}
+		} else {
+			result["message"] = "service stopped — replicas applied on next start/deploy"
+		}
+		notify("service", "updated", sid)
+		return c.JSON(result)
+	})
+
 	// ─── Start / Stop / Restart a service (status switch) ─────────────────
 	auth.Post("/:projectId/environments/:envId/services/:serviceId/start", func(c fiber.Ctx) error {
 		return setServiceStatus(c, "running")
@@ -803,4 +849,83 @@ func containerAction(name, action string) error {
 	default:
 		return fmt.Errorf("unknown action %q", action)
 	}
+}
+
+// containerNameForReplica returns the podman container name for replica index.
+// Replica 1 keeps the legacy base name (golify-<name>), replicas 2+ get a
+// numeric suffix (golify-<name>-2, ...) so listing/scale can group them.
+func containerNameForReplica(svc Service, replica int) string {
+	base := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
+	if replica <= 1 {
+		return base
+	}
+	return fmt.Sprintf("%s-%d", base, replica)
+}
+
+// scaleContainers reconciles the number of running containers for a service
+// to exactly n: starts new replicas (from the service image + port mapping)
+// when n > current, removes extras when n < current. Returns true when any
+// container action happened.
+func scaleContainers(svc Service, n int) (bool, error) {
+	base := containerNameForReplica(svc, 1)
+	// List existing containers for this service.
+	out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}").CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("list containers: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	existing := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name := strings.TrimSpace(line)
+		if name != "" {
+			existing[name] = true
+		}
+	}
+
+	changed := false
+	// Scale down: remove replicas with index > n (or base when n == 0 — but n>=1, so keep base).
+	for i := 1; i <= len(existing)+10; i++ {
+		if i > n {
+			// only remove ones that actually exist and follow our naming (base or base-N)
+			name := containerNameForReplica(svc, i)
+			if !existing[name] {
+				continue
+			}
+			if out, err := exec.Command("podman", "rm", "-f", name).CombinedOutput(); err != nil {
+				log.Printf("[scale] rm %s: %v (%s)", name, err, strings.TrimSpace(string(out)))
+			} else {
+				changed = true
+				delete(existing, name)
+			}
+		}
+	}
+
+	// Scale up: create missing replicas (index 1..n) from the service image.
+	fullImg := svc.Image
+	if !strings.Contains(fullImg, ":") {
+		fullImg = fullImg + ":" + firstNonEmpty(svc.ImageTag, "latest")
+	}
+	for i := 1; i <= n; i++ {
+		name := containerNameForReplica(svc, i)
+		if existing[name] {
+			continue // already there
+		}
+		args := []string{"run", "-d", "--name", name}
+		// port mapping: host:<container> — pick a free host port for each replica
+		hostPort, err := pickFreePort()
+		if err != nil {
+			log.Printf("[scale] pick port for %s: %v", name, err)
+		} else {
+			// expose container port 80 by default (matches deploy behavior)
+			args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:80", hostPort))
+		}
+		args = append(args, fullImg)
+		cmd := exec.Command("podman", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Printf("[scale] run %s: %v (%s)", name, err, strings.TrimSpace(string(out)))
+		} else {
+			changed = true
+			existing[name] = true
+		}
+	}
+	return changed, nil
 }

@@ -278,6 +278,15 @@ export const useProjectsStore = defineStore('projects', () => {
     return updated
   }
 
+  async function scaleService(projectId: string, envId: string, serviceId: string, replicas: number) {
+    const res = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/scale`, {
+      json: { replicas },
+    }).json<any>()
+    const s = getService(projectId, envId, serviceId)
+    if (s) Object.assign(s, res?.service ?? {})
+    return res
+  }
+
   async function addServiceDomain(projectId: string, envId: string, serviceId: string, host: string, port: string) {
     const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains`, {
       json: { host, port },

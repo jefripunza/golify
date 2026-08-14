@@ -107,6 +107,7 @@ const form = reactive({
 const saving = ref(false)
 const saveError = ref('')
 const saveOk = ref(false)
+const scaleNote = ref('')
 
 // Split a docker ref like "nginx:latest" or "ghcr.io/org/app:v1" into
 // image name + tag (only split at the LAST colon if it's not a registry port).
@@ -151,6 +152,14 @@ async function saveGeneral() {
   saveError.value = ''
   saveOk.value = false
   try {
+    // Remember the previous replica count BEFORE the save — if it changes we
+    // scale the running containers right after persisting (no-op when same).
+    const oldReplicas = service.value?.replicas ?? 1
+    const newReplicas = form.replicasMode === 'fix'
+      ? Number(form.replicas) || 1
+      : Number(form.replicasMin) || 1
+    const replicasChanged = oldReplicas !== newReplicas
+
     await store.updateService(projectId.value, envId.value, serviceId.value, {
       name: form.name,
       description: form.description,
@@ -161,12 +170,29 @@ async function saveGeneral() {
       basic_auth_user: form.basicAuthUser,
       basic_auth_pass: form.basicAuthPass,
       replicas_mode: form.replicasMode,
-      replicas: Number(form.replicas) || 1,
+      replicas: newReplicas,
       replicas_min: Number(form.replicasMin) || 1,
       replicas_max: Number(form.replicasMax) || 1,
     })
     saveOk.value = true
     setTimeout(() => (saveOk.value = false), 2500)
+
+    // Replica count changed → execute the scale so the running containers
+    // match the new value. Same value → nothing to do.
+    if (replicasChanged) {
+      try {
+        const res = await store.scaleService(projectId.value, envId.value, serviceId.value, newReplicas)
+        const note = res?.scaled
+          ? `Replicas scaled to ${newReplicas}`
+          : (res?.message || `Replicas saved to ${newReplicas} (applied on start)`)
+        saveError.value = ''
+        saveOk.value = true
+        scaleNote.value = note
+        setTimeout(() => (saveOk.value = false), 3000)
+      } catch (e: any) {
+        saveError.value = `Replicas saved but scale failed: ${e?.message || 'unknown error'}`
+      }
+    }
   } catch (e: any) {
     saveError.value = e?.message || 'Failed to save configuration'
   } finally {
@@ -954,6 +980,7 @@ const sectionIcons: Record<string, string> = {
             </Button>
           </div>
           <p v-if="saveError" class="mb-2 text-sm text-destructive">{{ saveError }}</p>
+          <p v-if="scaleNote" class="mb-2 text-sm text-emerald-600">{{ scaleNote }}</p>
 
           <div class="grid grid-cols-12 gap-3">
             <!-- Basic Info (col 6) -->
