@@ -71,6 +71,7 @@ export interface Environment {
   name: string // e.g. production, staging, preview-123
   description?: string
   ipInternal?: string
+  namespace?: string
   services: Service[]
   domains: string[]
   isProduction: boolean

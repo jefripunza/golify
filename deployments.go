@@ -120,7 +120,7 @@ func registerDeployments(auth fiber.Router) {
 	auth.Post("/:projectId/environments/:envId/services/:serviceId/deployments", func(c fiber.Ctx) error {
 		sid := c.Params("serviceId")
 		var svc Service
-		if err := db.First(&svc, "id = ?", sid).Error; err != nil {
+		if err := db.Preload("Domains").First(&svc, "id = ?", sid).Error; err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "service not found"})
 		}
 		// body optional: { commit, source }
@@ -194,6 +194,12 @@ func simulateDeploy(deployID string, svc Service) {
 		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] applying manifest OK — waiting for ready", deployID[:8]))
 		if err := k8sWaitReady(svc, svc.Replicas, 120*time.Second); err != nil {
 			appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] WARN: %v", deployID[:8], err))
+		}
+		// apply Ingress rules for the service's domains (if any)
+		if err := k8sApplyIngress(svc); err != nil {
+			appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] WARN ingress: %v", deployID[:8], err))
+		} else if len(svc.Domains) > 0 {
+			appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] Ingress updated for %d domain(s)", deployID[:8], len(svc.Domains)))
 		}
 		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] deployment %s ready — service is running", deployID[:8], name))
 		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] deploy finished OK (K8s)", deployID[:8]))
@@ -402,7 +408,7 @@ func logHandler(ctx *fasthttp.RequestCtx) {
 		}
 		upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 			defer conn.Close()
-			cmd, err := k8sLogStream(containerID)
+			cmd, err := k8sLogStream(k8sNamespaceForService(svc), containerID)
 			if err != nil {
 				writeWS(conn, []byte(fmt.Sprintf("[log] %v — deploy/start the service first\r\n", err)))
 				time.Sleep(300 * time.Millisecond)
@@ -544,7 +550,7 @@ func terminalServiceHandler(ctx *fasthttp.RequestCtx) {
 		// K8s mode: the id is a pod name → kubectl exec.
 		var svc Service
 		if err := db.First(&svc, "id = ?", svcID).Error; err == nil && k8sEnabled(svc) {
-			terminalHandlerWithCmd(ctx, k8sExec(parts[1]))
+			terminalHandlerWithCmd(ctx, k8sExec(k8sNamespaceForService(svc), parts[1]))
 			return
 		}
 		terminalHandler(ctx, "container", parts[1])

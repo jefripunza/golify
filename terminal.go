@@ -1,10 +1,9 @@
 package main
 
 import (
-	"io"
+	"log"
 	"net/http"
 	"os/exec"
-	"sync"
 
 	"github.com/fasthttp/websocket"
 	"github.com/valyala/fasthttp"
@@ -87,18 +86,18 @@ func runShellOverWS(conn *websocket.Conn, cmd *exec.Cmd) {
 	if err != nil {
 		return
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return
-	}
+	mw := &wsWriter{conn: conn}
+	// Wire stdout/stderr DIRECTLY to the WS writer (no StdoutPipe/StderrPipe).
+	// Pipes + io.Copy goroutines can deadlock with kubectl exec -i (it writes
+	// to both stdout and stderr and buffers aggressively). Direct assignment
+	// lets the OS copy semantics handle it with zero intermediate buffers.
+	cmd.Stdout = mw
+	cmd.Stderr = mw
 	if err := cmd.Start(); err != nil {
 		writeWS(conn, []byte("\r\n\x1b[31mfailed: "+err.Error()+"\x1b[0m\r\n"))
 		return
 	}
+	log.Printf("[terminal] started %s (pid=%d)", cmd.Path, cmd.Process.Pid)
 
 	// WS frames → subprocess stdin
 	go func() {
@@ -111,16 +110,6 @@ func runShellOverWS(conn *websocket.Conn, cmd *exec.Cmd) {
 		}
 	}()
 
-	// subprocess stdout+stderr → WS
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		mw := &wsWriter{conn: conn}
-		io.Copy(mw, io.MultiReader(stdout, stderr))
-	}()
-
 	cmd.Wait()
 	writeWS(conn, []byte("\r\n\x1b[33m[process exited]\x1b[0m\r\n"))
-	wg.Wait()
 }

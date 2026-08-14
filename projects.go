@@ -96,7 +96,8 @@ func registerProjects(r fiber.Router) {
 					"id": e.ID, "name": e.Name, "description": e.Description,
 					"is_production":  e.IsProduction,
 					"ip_internal":    e.IPInternal,
-					"cluster_status": kindClusterStatus(e.ID),
+					"cluster_status": kindClusterStatus(),
+					"namespace":      envNamespace(string(e.ID)),
 					"services":       svcs, "domains": domains,
 					"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
 				})
@@ -121,28 +122,30 @@ func registerProjects(r fiber.Router) {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
 		}
 		// Project = folder. It gets a default "production" environment, and
-		// that environment owns the kind cluster (cluster name = env UUID).
+		// environments map to NAMESPACES in the shared cluster "golify"
+		// (container: golify-control-plane — they no longer own a cluster each).
 		p := Project{Name: body.Name, Description: body.Description, SourceID: body.SourceID}
 		p.ID = newID()
 		if err := db.Create(&p).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		env := Environment{ProjectID: p.ID, Name: "production", IsProduction: true}
-		env.ID = newID() // cluster name is the env UUID
+		env.ID = newID()
 		if err := db.Create(&env).Error; err != nil {
 			db.Delete(&Project{}, "id = ?", p.ID)
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		// create the kind cluster named after the environment UUID
-		if err := kindCreateCluster(env.ID); err != nil {
-			db.Delete(&Environment{}, "id = ?", env.ID)
-			db.Delete(&Project{}, "id = ?", p.ID)
+		// Ensure the shared cluster exists (idempotent) and record its IP.
+		if err := kindCreateCluster(); err != nil {
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
 		}
-		// capture the cluster's internal IP into the environment row
-		env.IPInternal = kindClusterIP(env.ID)
+		env.IPInternal = kindClusterIP()
 		if err := db.Model(&env).Update("ip_internal", env.IPInternal).Error; err != nil {
 			log.Printf("[projects] save ip_internal failed: %v", err)
+		}
+		// Ensure the env namespace exists in the shared cluster.
+		if err := ensureNamespace(envNamespace(string(env.ID))); err != nil {
+			log.Printf("[projects] ensure namespace failed: %v", err)
 		}
 		notify("project", "created", string(p.ID))
 		notify("environment", "created", string(env.ID))
@@ -151,7 +154,8 @@ func registerProjects(r fiber.Router) {
 			"source_id": p.SourceID, "environments": []fiber.Map{{
 				"id": env.ID, "name": env.Name, "is_production": true,
 				"ip_internal":    env.IPInternal,
-				"cluster_status": "Running", "services": []fiber.Map{},
+				"cluster_status": kindClusterStatus(), "services": []fiber.Map{},
+				"namespace": envNamespace(string(env.ID)),
 				"domains": []fiber.Map{}, "created_at": env.CreatedAt,
 				"updated_at": env.UpdatedAt,
 			}}, "env_count": 1, "created_at": p.CreatedAt, "updated_at": p.UpdatedAt,
@@ -214,7 +218,8 @@ func registerProjects(r fiber.Router) {
 				"id": e.ID, "name": e.Name, "description": e.Description,
 				"is_production":  e.IsProduction,
 				"ip_internal":    e.IPInternal,
-				"cluster_status": kindClusterStatus(e.ID),
+				"cluster_status": kindClusterStatus(),
+				"namespace":      envNamespace(string(e.ID)),
 				"services":       svcs, "domains": domains,
 				"created_at": e.CreatedAt, "updated_at": e.UpdatedAt,
 			})
@@ -302,8 +307,8 @@ func registerProjects(r fiber.Router) {
 		if err := db.First(&p, "id = ?", pid).Error; err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
 		}
-		// Environment = Kubernetes cluster. The env UUID v7 is the cluster
-		// name — creating an environment creates a brand-new kind cluster.
+		// Environment = Kubernetes NAMESPACE in the shared cluster
+		// "golify" (no per-env cluster anymore).
 		env := Environment{ProjectID: pid, Name: body.Name, Description: body.Description, IsProduction: body.IsProduction}
 		env.ID = newID()
 		for _, h := range body.Domains {
@@ -312,14 +317,20 @@ func registerProjects(r fiber.Router) {
 		if err := db.Create(&env).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		if err := kindCreateCluster(env.ID); err != nil {
+		// Ensure the shared cluster + this env's namespace exist.
+		if err := kindCreateCluster(); err != nil {
 			db.Delete(&Environment{}, "id = ?", env.ID)
 			return c.Status(502).JSON(fiber.Map{"error": "kind create failed: " + err.Error()})
+		}
+		if err := ensureNamespace(envNamespace(string(env.ID))); err != nil {
+			db.Delete(&Environment{}, "id = ?", env.ID)
+			return c.Status(502).JSON(fiber.Map{"error": "namespace create failed: " + err.Error()})
 		}
 		notify("environment", "created", string(env.ID))
 		return c.Status(201).JSON(fiber.Map{
 			"id": env.ID, "name": env.Name, "description": env.Description, "is_production": env.IsProduction,
-			"cluster_status": "Running", "services": []fiber.Map{},
+			"cluster_status": kindClusterStatus(), "services": []fiber.Map{},
+			"namespace": envNamespace(string(env.ID)),
 			"domains": []fiber.Map{}, "created_at": env.CreatedAt, "updated_at": env.UpdatedAt,
 		})
 	})
@@ -370,16 +381,19 @@ func registerProjects(r fiber.Router) {
 				"error": fmt.Sprintf("cannot delete environment: %d service(s) still exist — delete all services first", svcCount),
 			})
 		}
-		// tear down the kind cluster named after this env UUID
-		kindDeleteCluster(eid)
+		// Delete the env's NAMESPACE in the shared cluster (NOT the cluster).
+		ns := envNamespace(eid)
+		if out, err := kubectl("delete", "namespace", ns, "--ignore-not-found"); err != nil {
+			log.Printf("[projects] delete namespace %s: %v (%s)", ns, err, strings.TrimSpace(out))
+		}
 		if err := db.Delete(&Environment{}, "id = ?", eid).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		notify("environment", "deleted", eid)
 		return c.JSON(fiber.Map{"deleted": eid})
-	})
+		})
 
-	// ─── Services within an environment ────────────────────────────────────
+		// ─── Services within an environment ────────────────────────────────────
 	auth.Get("/:projectId/environments/:envId/services", func(c fiber.Ctx) error {
 		var rows []Service
 		if err := db.Where("environment_id = ?", c.Params("envId")).Find(&rows).Error; err != nil {
@@ -390,16 +404,19 @@ func registerProjects(r fiber.Router) {
 
 	auth.Post("/:projectId/environments/:envId/services", func(c fiber.Ctx) error {
 		var body struct {
-			Name        string   `json:"name"`
-			Kind        string   `json:"kind"`
-			Type        string   `json:"type"`    // application | database | tool
-			Catalog     string   `json:"catalog"` // e.g. docker-image | version-control | postgres | qdrant
-			Image       string   `json:"image"`
-			ComposePath string   `json:"compose_path"`
-			Status      string   `json:"status"`
-			CPU         float64  `json:"cpu"`
-			Memory      int64    `json:"memory"`
-			Ports       []string `json:"ports"`
+			Name         string   `json:"name"`
+			Kind         string   `json:"kind"`
+			Type         string   `json:"type"`    // application | database | tool
+			Catalog      string   `json:"catalog"` // e.g. docker-image | version-control | postgres | qdrant
+			Image        string   `json:"image"`
+			ImageTag     string   `json:"image_tag"`
+			ComposePath  string   `json:"compose_path"`
+			Status       string   `json:"status"`
+			CPU          float64  `json:"cpu"`
+			Memory       int64    `json:"memory"`
+			Ports        []string `json:"ports"`
+			LoadBalancer string   `json:"load_balancer"`
+			Replicas     int      `json:"replicas"`
 		}
 		if err := c.Bind().JSON(&body); err != nil || body.Name == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "name required"})
@@ -420,8 +437,19 @@ func registerProjects(r fiber.Router) {
 		s := Service{
 			EnvironmentID: eid, Name: body.Name, Kind: body.Kind,
 			Type: body.Type, Catalog: body.Catalog,
-			Image: body.Image, ComposePath: body.ComposePath, Status: body.Status,
+			Image: body.Image, ImageTag: body.ImageTag, ComposePath: body.ComposePath, Status: body.Status,
 			CPU: body.CPU, Memory: body.Memory, Ports: body.Ports,
+		}
+		// load_balancer: k8s → full-K8s mode; round_robin/least_conn → podman + proxy
+		if body.LoadBalancer == "k8s" || body.LoadBalancer == "round_robin" || body.LoadBalancer == "least_conn" {
+			s.LoadBalancer = body.LoadBalancer
+		} else {
+			s.LoadBalancer = "round_robin"
+		}
+		if body.Replicas >= 1 {
+			s.Replicas = body.Replicas
+		} else {
+			s.Replicas = 1
 		}
 		if err := db.Create(&s).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})

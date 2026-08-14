@@ -122,6 +122,7 @@ function mapEnv(e: any): Environment {
     ipInternal: e.ip_internal ?? '',
     isProduction: e.is_production,
     clusterStatus: e.cluster_status || 'Unknown',
+    namespace: e.namespace || '',
     services: (e.services ?? []).map(mapSvc),
     domains: (e.domains ?? []).map((d: any) => d.host),
   }

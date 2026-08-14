@@ -157,6 +157,10 @@ function statusColor(s: string) {
               <Server class="size-3.5" />
               <span class="font-mono">{{ env.ipInternal }}</span>
             </div>
+            <div v-if="env.namespace" class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span class="text-primary/70">ns:</span>
+              <span class="font-mono">{{ env.namespace }}</span>
+            </div>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
             <span>{{ env.services.length }} service(s)</span>

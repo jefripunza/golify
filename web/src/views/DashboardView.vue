@@ -394,13 +394,13 @@ async function fetchDomainCount() {
   }
 }
 
-// Total Cluster — total environments across all projects (each env = 1 cluster)
-// Computed from the shared projects store (already fetched by the store's
-// watchEffect) instead of a raw fetch — the old fetch caused a DOUBLE
-// /api/v1/projects hit on the dashboard.
+// Total Cluster — Golify manages ONE shared kind cluster
+// ("golify", node container "golify-control-plane") for ALL environments.
+// It shows 1 when at least one environment exists (namespace), 0 otherwise.
 const clusterCount = computed<number>(() => {
   const store = useProjectsStore()
-  return store.projects.reduce((acc: number, p: any) => acc + (p.environments?.length ?? 0), 0)
+  const envTotal = store.projects.reduce((acc: number, p: any) => acc + (p.environments?.length ?? 0), 0)
+  return envTotal > 0 ? 1 : 0
 })
 
 const totalServiceLabel = ref('0') // hardcoded — service milestone not built yet
