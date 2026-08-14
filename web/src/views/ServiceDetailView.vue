@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import * as monaco from 'monaco-editor'
 import {
   Card,
   CardContent,
@@ -204,6 +205,95 @@ async function removeEnvVar(id: string) {
 function addEnvVarRow() {
   envText.value = (envText.value.trimEnd() ? envText.value.trimEnd() + '\n' : '') + 'NEW_VAR='
 }
+
+// ─── Monaco .env editor ─────────────────────────────────────────────────
+const envEditorEl = ref<HTMLElement | null>(null)
+let envEditor: monaco.editor.IStandaloneCodeEditor | null = null
+let envEditorInitialized = false
+
+// .env language definition — highlight keys cyan, values orange/green,
+// comments gray (like the 9Router .env screenshot the user shared).
+monaco.languages.register({ id: 'dotenv' })
+monaco.languages.setMonarchTokensProvider('dotenv', {
+  tokenizer: {
+    root: [
+      [/^#.*$/, 'comment'],
+      [/^\s*[A-Za-z_][A-Za-z0-9_]*/, 'variable'],
+      [/=/, 'operator'],
+      [/".*"|'.*'/, 'string.quote'],
+      [/\d+/, 'number'],
+      [/https?:\/\/\S+/, 'url'],
+      [/true|false/, 'boolean'],
+      [/.*/, 'string'],
+    ],
+  },
+})
+monaco.editor.defineTheme('golify-dark', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [
+    { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
+    { token: 'variable', foreground: '22d3ee' },   // cyan
+    { token: 'operator', foreground: 'a1a1aa' },
+    { token: 'string', foreground: 'fbbf24' },     // orange
+    { token: 'string.quote', foreground: '4ade80' }, // green
+    { token: 'number', foreground: 'f472b6' },
+    { token: 'url', foreground: '4ade80' },        // green URLs
+    { token: 'boolean', foreground: 'fbbf24' },    // orange booleans
+  ],
+  colors: {
+    'editor.background': '#0a0a0a',
+    'editor.foreground': '#e4e4e7',
+    'editorLineNumber.foreground': '#52525b',
+    'editorLineNumber.activeForeground': '#a1a1aa',
+    'editorCursor.foreground': '#22d3ee',
+    'editor.selectionBackground': '#155e7533',
+    'editor.lineHighlightBackground': '#18181b',
+    'editorIndentGuide.background1': '#27272a',
+  },
+})
+
+function initEnvEditorMonaco() {
+  if (envEditorInitialized || !envEditorEl.value) return
+  envEditorInitialized = true
+  envEditor = monaco.editor.create(envEditorEl.value, {
+    value: envText.value,
+    language: 'dotenv',
+    theme: 'golify-dark',
+    fontSize: 13,
+    fontFamily: 'JetBrains Mono, Fira Code, Menlo, monospace',
+    lineNumbers: 'on',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    padding: { top: 12, bottom: 12 },
+    renderWhitespace: 'none',
+    wordWrap: 'off',
+    tabSize: 2,
+    scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
+  })
+  envEditor.onDidChangeModelContent(() => {
+    envText.value = envEditor?.getValue() ?? ''
+  })
+}
+
+// Lazily init when the user opens the Environment Variables section
+watch(activeSection, (s) => {
+  if (s === 'envvars') {
+    nextTick(() => {
+      initEnvEditorMonaco()
+      // sync external changes (e.g. after save) into the editor
+      if (envEditor && envEditor.getValue() !== envText.value) {
+        envEditor.setValue(envText.value)
+      }
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  envEditor?.dispose()
+  envEditor = null
+})
 
 // ─── Persistent Storage ─────────────────────────────────────────────────
 const storageForm = reactive({ name: '', mountPath: '', hostPath: '' })
@@ -1437,15 +1527,9 @@ const sectionIcons: Record<string, string> = {
                   <CardDescription>One variable per line — KEY=VALUE</CardDescription>
                 </CardHeader>
                 <CardContent class="grid gap-3">
-                  <!-- .env editor textarea -->
-                  <div class="relative overflow-hidden rounded-lg border bg-black/90">
-                    <textarea
-                      v-model="envText"
-                      rows="14"
-                      spellcheck="false"
-                      class="env-editor block w-full resize-y bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-emerald-300 caret-emerald-300 outline-none placeholder:text-zinc-600"
-                      placeholder="# APP_ENV=production&#10;DEBUG=true"
-                    ></textarea>
+                  <!-- .env code editor (Monaco) -->
+                  <div class="relative overflow-hidden rounded-lg border border-zinc-800">
+                    <div ref="envEditorEl" class="h-80 w-full" style="min-height: 320px" />
                   </div>
                   <div class="flex items-center justify-between gap-2">
                     <p class="text-xs text-muted-foreground">{{ envVarCount }} variable(s) · build: {{ buildVarCount }}</p>

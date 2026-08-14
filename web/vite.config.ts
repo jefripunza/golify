@@ -23,6 +23,12 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
+    optimizeDeps: {
+      include: ['monaco-editor'],
+    },
+    worker: {
+      format: 'es',
+    },
     server: {
       port: devPort,
       strictPort: true,
