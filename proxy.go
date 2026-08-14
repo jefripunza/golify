@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"log"
+	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
@@ -122,6 +127,19 @@ func serviceProxyTargets(host string) []string {
 	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
 		return nil
 	}
+	// K8s mode: traffic goes through the cluster's Ingress controller.
+	// Load balancing is handled by Kubernetes (Service ClusterIP + kube-proxy
+	// round robin / Ingress upstreams) — we just forward to the ingress entry
+	// point. For kind+podman the only reachable entry is a kubectl
+	// port-forward to the ingress-nginx controller (GOLIFY_K8S_INGRESS_ADDR).
+	if svc.LoadBalancer == "k8s" {
+		addr := os.Getenv("GOLIFY_K8S_INGRESS_ADDR")
+		if addr == "" {
+			addr = "127.0.0.1:18080" // dev default: kubectl port-forward ingress
+		}
+		log.Printf("[proxy] %s → K8s ingress %s", host, addr)
+		return []string{addr}
+	}
 	// prefer networks host_port (explicit mapping), else ports[0] host part
 	basePort := ""
 	for _, n := range svc.Networks {
@@ -237,15 +255,56 @@ func pickUpstream(serviceID, strategy string, targets []string) string {
 	}
 }
 
-// proxyToBackend forwards the request to an upstream (127.0.0.1:<port>)
-// using fasthttp's client and mirrors the response back. With multiple
-// replicas the upstream is chosen by the service's LB strategy.
+// proxyToBackendK8s forwards to the K8s Ingress via net/http, overriding
+// the Host header so the Ingress rule (test1.simtaru.online) matches.
+// Load balancing happens inside the cluster (Service + kube-proxy).
+func proxyToBackendK8s(c fiber.Ctx, target, host string) error {
+	log.Printf("[proxy] k8s net/http forward → %s (Host: %s)", target, host)
+	upstream := "http://" + target
+	path := string(c.Request().URI().RequestURI())
+	req, err := http.NewRequestWithContext(c.Context(), string(c.Request().Header.Method()), upstream+path, bytes.NewReader(c.Request().Body()))
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())
+	}
+	req.Host = host
+	// copy headers (skip hop-by-hop)
+	c.Request().Header.VisitAll(func(k, v []byte) {
+		key := string(k)
+		if strings.EqualFold(key, "Host") || strings.EqualFold(key, "Connection") ||
+			strings.EqualFold(key, "Upgrade") || strings.EqualFold(key, "Proxy-Connection") {
+			return
+		}
+		req.Header.Set(key, string(v))
+	})
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())
+	}
+	c.Response().SetStatusCode(resp.StatusCode)
+	c.Response().SetBody(body)
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			c.Response().Header.Add(k, v)
+		}
+	}
+	return nil
+}
+
+
 func proxyToBackend(c fiber.Ctx, targets []string) error {
 	if len(targets) == 0 {
 		return c.Status(fiber.StatusBadGateway).SendString("proxy error: no upstream")
 	}
 	// resolve the strategy for this service from the request host
-	host := strings.ToLower(c.Hostname())
+	// Use the Host HEADER explicitly (not c.Hostname(), which Fiber may
+	// derive from the connection address when proxied).
+	host := strings.ToLower(string(c.Request().Header.Peek("Host")))
 	if i := strings.LastIndex(host, ":"); i > 0 && !strings.Contains(host[i:], "]") {
 		host = host[:i]
 	}
@@ -270,6 +329,7 @@ func proxyToBackend(c fiber.Ctx, targets []string) error {
 	}
 
 	upstream := "http://" + target
+	_ = upstream // (kept for clarity; dialing happens via req.URI().SetHost)
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
@@ -287,8 +347,16 @@ func proxyToBackend(c fiber.Ctx, targets []string) error {
 		req.Header.SetBytesKV(k, v)
 	})
 	req.Header.SetMethodBytes(c.Request().Header.Method())
+	// K8s path: use net/http with an explicit Host override — fasthttp's
+	// URI/Host handling is too easy to get wrong for Ingress host routing.
+	if strategy == "k8s" {
+		return proxyToBackendK8s(c, target, host)
+	}
+	// Use an absolute URI so fasthttp dials the upstream, then override the
+	// Host header on the wire (K8s Ingress routes on the original Host).
 	req.SetRequestURI(upstream + string(c.Request().URI().RequestURI()))
 	req.Header.SetHost(target)
+	log.Printf("[proxy] forwarding %s → %s (Host: %s)", string(c.Request().URI().RequestURI()), target, host)
 	if body := c.Request().Body(); len(body) > 0 {
 		req.SetBody(body)
 	}

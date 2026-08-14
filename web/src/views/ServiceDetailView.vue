@@ -110,7 +110,7 @@ const form = reactive({
   replicas: '1',
   replicasMin: '1',
   replicasMax: '1',
-  loadBalancer: 'round_robin' as 'round_robin' | 'least_conn',
+  loadBalancer: 'round_robin' as 'round_robin' | 'least_conn' | 'k8s',
 })
 const saving = ref(false)
 const saveError = ref('')
@@ -1265,6 +1265,7 @@ const sectionIcons: Record<string, string> = {
                   >
                     <option value="round_robin">Round Robin</option>
                     <option value="least_conn">Least Connection</option>
+                    <option value="k8s">Kubernetes (Ingress)</option>
                   </select>
                   <p class="text-xs text-muted-foreground">Distribution strategy across {{ lbCount }} replicas.</p>
                 </div>

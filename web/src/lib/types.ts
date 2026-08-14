@@ -56,7 +56,7 @@ export interface Service {
   replicas?: number
   replicasMin?: number
   replicasMax?: number
-  loadBalancer?: 'round_robin' | 'least_conn'
+  loadBalancer?: 'round_robin' | 'least_conn' | 'k8s'
   status: ServiceStatus
   cpu: number // %
   memory: number // MB

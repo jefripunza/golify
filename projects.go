@@ -537,7 +537,7 @@ func registerProjects(r fiber.Router) {
 		if body.ReplicasMax != nil && *body.ReplicasMax >= *body.ReplicasMin {
 			svc.ReplicasMax = *body.ReplicasMax
 		}
-		if body.LoadBalancer != nil && (*body.LoadBalancer == "round_robin" || *body.LoadBalancer == "least_conn") {
+		if body.LoadBalancer != nil && (*body.LoadBalancer == "round_robin" || *body.LoadBalancer == "least_conn" || *body.LoadBalancer == "k8s") {
 			svc.LoadBalancer = *body.LoadBalancer
 		}
 		if err := db.Save(&svc).Error; err != nil {
