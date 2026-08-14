@@ -134,9 +134,9 @@ onBeforeUnmount(() => ws?.close())
       <div class="flex flex-wrap items-center gap-1 text-sm text-muted-foreground">
         <RouterLink :to="`/projects`" class="hover:text-foreground">{{ project?.name ?? 'project' }}</RouterLink>
         <span>/</span>
-        <RouterLink :to="`/project/${projectId}/environment/${envId}/services`" class="hover:text-foreground">{{ env?.name ?? 'env' }}</RouterLink>
+        <RouterLink :to="`/project/${projectId}/environments?envs=1`" class="hover:text-foreground">{{ env?.name ?? 'env' }}</RouterLink>
         <span>/</span>
-        <RouterLink :to="`/project/${projectId}/environment/${envId}/service/${serviceId}`" class="hover:text-foreground">{{ service?.name ?? 'service' }}</RouterLink>
+        <RouterLink :to="`/project/${projectId}/environment/${envId}/services`" class="hover:text-foreground">{{ service?.name ?? 'service' }}</RouterLink>
         <span>/</span>
         <span class="text-foreground">deploy {{ deployId.slice(0, 8) }}</span>
       </div>
