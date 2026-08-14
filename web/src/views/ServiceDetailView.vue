@@ -1054,14 +1054,14 @@ const sectionIcons: Record<string, string> = {
                 </CardDescription>
                 <div class="flex flex-col gap-2">
                   <div class="flex gap-2">
+                    <Input v-model="newDomain.subdomain" placeholder="subdomain (opsional)" class="flex-1" />
                     <select
                       v-model="selectedRootDomainId"
                       class="h-9 w-44 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="">— root domain —</option>
-                      <option v-for="d in availableRootDomains()" :key="d.id" :value="d.id">{{ d.host }}</option>
+                      <option v-for="d in availableRootDomains()" :key="d.id" :value="d.id">.{{ d.host }}</option>
                     </select>
-                    <Input v-model="newDomain.subdomain" placeholder="subdomain (opsional)" class="flex-1" />
                   </div>
                   <div class="flex items-center justify-between gap-2">
                     <label class="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1088,7 +1088,14 @@ const sectionIcons: Record<string, string> = {
               <CardContent class="grid gap-1.5">
                 <div v-for="d in service.domains ?? []" :key="d.id" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
                   <span class="flex items-center gap-2">
-                    <span class="truncate font-mono">{{ d.host }}</span>
+                    <a
+                      :href="(d.isForceHTTPS ? 'https://' : 'http://') + d.host"
+                      target="_blank"
+                      rel="noopener"
+                      class="truncate font-mono hover:text-primary hover:underline"
+                    >
+                      {{ d.isForceHTTPS ? 'https://' : 'http://' }}{{ d.host }}
+                    </a>
                     <Badge v-if="d.isForceHTTPS" variant="secondary">HTTPS</Badge>
                   </span>
                   <span class="flex items-center gap-2">
