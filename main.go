@@ -134,7 +134,7 @@ func main() {
 			log.Fatalf("drop legacy service_domains: %v", err)
 		}
 	}
-	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
+	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &ServiceEnvironmentVariable{}, &ServicePersistentStorage{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
 	log.Printf("sqlite ready at %s (GORM) — fresh DB, no seeder (onboarding-first)", dbPath)

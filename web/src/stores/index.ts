@@ -164,6 +164,8 @@ function mapSvc(s: any): Service {
       host: d.host ?? '',
     })),
     networks: (s.networks ?? []).map((n: any) => ({ id: String(n.id), hostPort: n.host_port, containerPort: n.container_port })),
+    envVars: (s.env_vars ?? []).map((v: any) => ({ id: String(v.id), key: v.key, value: v.value, isBuild: !!v.is_build })),
+    storages: (s.storages ?? []).map((st: any) => ({ id: String(st.id), name: st.name, mountPath: st.mount_path, hostPath: st.host_path })),
     updatedAt: s.updated_at,
   }
 }

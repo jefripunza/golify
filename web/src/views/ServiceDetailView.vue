@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useProjectsStore } from '@/stores'
-import { getAuth } from '@/lib/api'
+import { getAuth, authed } from '@/lib/api'
 import type { Deployment, Service } from '@/lib/types'
 import {
   Play,
@@ -116,6 +116,134 @@ const saving = ref(false)
 const saveError = ref('')
 const saveOk = ref(false)
 const scaleNote = ref('')
+
+// ─── Environment Variables (.env editor) ────────────────────────────────
+const envText = ref('')
+const savingEnv = ref(false)
+const envSaved = ref(false)
+const envError = ref('')
+
+// Init env editor from service envVars (KEY=VALUE lines)
+function initEnvEditor() {
+  const s = service.value
+  if (!s) return
+  envText.value = (s.envVars ?? []).map((v) => `${v.key}=${v.value}`).join('\n')
+  envError.value = ''
+  envSaved.value = false
+}
+watch(() => service.value?.id, () => { if (service.value) initEnvEditor() }, { immediate: true })
+
+const envVarCount = computed(() => {
+  const lines = envText.value.split('\n').filter((l) => l.trim() && !l.trim().startsWith('#'))
+  return lines.length
+})
+const buildVarCount = computed(() => (service.value?.envVars ?? []).filter((v) => v.isBuild).length)
+
+// Parse .env text → rows
+function parseEnvText(): { key: string; value: string }[] {
+  const rows: { key: string; value: string }[] = []
+  for (const line of envText.value.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const eq = t.indexOf('=')
+    if (eq <= 0) continue
+    const key = t.slice(0, eq).trim()
+    let value = t.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      envError.value = `Invalid key: ${key} (must be A-Za-z0-9_ starting with letter or _)`
+      return []
+    }
+    rows.push({ key, value })
+  }
+  return rows
+}
+
+async function saveEnvText() {
+  const s = service.value
+  if (!s) return
+  envError.value = ''
+  const rows = parseEnvText()
+  if (envError.value) return
+  savingEnv.value = true
+  try {
+    const base = `/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}`
+    // Delete all existing, then recreate (simple sync strategy)
+    for (const v of s.envVars ?? []) {
+      await authed().delete(`${base}/env-vars/${v.id}`)
+    }
+    for (const r of rows) {
+      await authed().post(`${base}/env-vars`, { json: { key: r.key, value: r.value, is_build: false } })
+    }
+    await store.fetchProjects()
+    const fresh = store.getService(projectId.value, envId.value, serviceId.value)
+    if (fresh) initEnvEditor()
+    envSaved.value = true
+    setTimeout(() => (envSaved.value = false), 2000)
+  } catch (e: any) {
+    envError.value = e?.message || 'Failed to save env vars'
+  } finally {
+    savingEnv.value = false
+  }
+}
+
+async function removeEnvVar(id: string) {
+  const s = service.value
+  if (!s) return
+  try {
+    await authed().delete(`/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}/env-vars/${id}`)
+    await store.fetchProjects()
+    initEnvEditor()
+  } catch (e: any) {
+    envError.value = e?.message || 'Failed to delete env var'
+  }
+}
+
+function addEnvVarRow() {
+  envText.value = (envText.value.trimEnd() ? envText.value.trimEnd() + '\n' : '') + 'NEW_VAR='
+}
+
+// ─── Persistent Storage ─────────────────────────────────────────────────
+const storageForm = reactive({ name: '', mountPath: '', hostPath: '' })
+const savingStorage = ref(false)
+const storageError = ref('')
+
+async function createStorage() {
+  if (!storageForm.name.trim() || !storageForm.mountPath.trim()) {
+    storageError.value = 'Name and Mount Path are required'
+    return
+  }
+  savingStorage.value = true
+  storageError.value = ''
+  try {
+    await authed().post(`/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}/storages`, {
+      json: {
+        name: storageForm.name.trim(),
+        mount_path: storageForm.mountPath.trim(),
+        host_path: storageForm.hostPath.trim(),
+      },
+    })
+    storageForm.name = ''
+    storageForm.mountPath = ''
+    storageForm.hostPath = ''
+    await store.fetchProjects()
+  } catch (e: any) {
+    storageError.value = e?.message || 'Failed to create storage'
+  } finally {
+    savingStorage.value = false
+  }
+}
+
+async function removeStorage(id: string) {
+  try {
+    await authed().delete(`/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}/storages/${id}`)
+    await store.fetchProjects()
+  } catch (e: any) {
+    storageError.value = e?.message || 'Failed to delete storage'
+  }
+}
 
 // Split a docker ref like "nginx:latest" or "ghcr.io/org/app:v1" into
 // image name + tag (only split at the LAST colon if it's not a registry port).
@@ -1292,6 +1420,140 @@ const sectionIcons: Record<string, string> = {
           </div>
         </template>
 
+            <template v-else-if="activeSection === 'envvars'">
+              <div class="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h2 class="text-lg font-semibold">Environment Variables</h2>
+                  <p class="text-xs text-muted-foreground">Edit .env style key=value pairs for this service.</p>
+                </div>
+                <Button size="sm" variant="outline" @click="addEnvVarRow">
+                  <Plus class="mr-1 size-4" /> Add Variable
+                </Button>
+              </div>
+
+              <Card>
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-base">.env Editor</CardTitle>
+                  <CardDescription>One variable per line — KEY=VALUE</CardDescription>
+                </CardHeader>
+                <CardContent class="grid gap-3">
+                  <!-- .env editor textarea -->
+                  <div class="relative overflow-hidden rounded-lg border bg-black/90">
+                    <textarea
+                      v-model="envText"
+                      rows="14"
+                      spellcheck="false"
+                      class="env-editor block w-full resize-y bg-transparent px-4 py-3 font-mono text-[13px] leading-5 text-emerald-300 caret-emerald-300 outline-none placeholder:text-zinc-600"
+                      placeholder="# APP_ENV=production&#10;DEBUG=true"
+                    ></textarea>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="text-xs text-muted-foreground">{{ envVarCount }} variable(s) · build: {{ buildVarCount }}</p>
+                    <div class="flex gap-2">
+                      <Button size="sm" variant="ghost" :disabled="!envText" @click="envText = ''">Clear</Button>
+                      <Button size="sm" :disabled="savingEnv" @click="saveEnvText">
+                        <Loader2 v-if="savingEnv" class="mr-1 size-4 animate-spin" />
+                        <Save v-else class="mr-1 size-4" />
+                        {{ envSaved ? 'Saved ✓' : 'Save' }}
+                      </Button>
+                    </div>
+                  </div>
+                  <p v-if="envError" class="text-xs text-destructive">{{ envError }}</p>
+
+                  <!-- Table of stored variables -->
+                  <div v-if="service.envVars?.length" class="mt-2 overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th class="px-3 py-2">Key</th>
+                          <th class="px-3 py-2">Value</th>
+                          <th class="px-3 py-2">Build</th>
+                          <th class="px-3 py-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-border">
+                        <tr v-for="v in service.envVars" :key="v.id" class="hover:bg-muted/30">
+                          <td class="px-3 py-2 font-mono text-[13px]">{{ v.key }}</td>
+                          <td class="max-w-[280px] truncate px-3 py-2 font-mono text-[13px] text-muted-foreground">{{ v.value }}</td>
+                          <td class="px-3 py-2">
+                            <Badge v-if="v.isBuild" variant="secondary">Build</Badge>
+                            <span v-else class="text-xs text-muted-foreground">Runtime</span>
+                          </td>
+                          <td class="px-3 py-2 text-right">
+                            <button class="text-muted-foreground hover:text-foreground" @click="removeEnvVar(v.id)"><Trash2 class="size-3.5" /></button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </template>
+
+            <template v-else-if="activeSection === 'storage'">
+              <div class="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h2 class="text-lg font-semibold">Persistent Storage</h2>
+                  <p class="text-xs text-muted-foreground">Volumes mounted into the service container.</p>
+                </div>
+                <Button size="sm" variant="outline" @click="addStorageRow">
+                  <Plus class="mr-1 size-4" /> Add Storage
+                </Button>
+              </div>
+
+              <Card>
+                <CardHeader class="pb-2">
+                  <CardTitle class="text-base">Volumes</CardTitle>
+                  <CardDescription>Mount a volume at a container path.</CardDescription>
+                </CardHeader>
+                <CardContent class="grid gap-3">
+                  <div class="grid grid-cols-12 gap-2">
+                    <div class="col-span-12 md:col-span-3">
+                      <Label>Name</Label>
+                      <Input v-model="storageForm.name" placeholder="data" />
+                    </div>
+                    <div class="col-span-12 md:col-span-4">
+                      <Label>Mount Path</Label>
+                      <Input v-model="storageForm.mountPath" placeholder="/data" />
+                    </div>
+                    <div class="col-span-12 md:col-span-3">
+                      <Label>Host Path (optional)</Label>
+                      <Input v-model="storageForm.hostPath" placeholder="/var/lib/golify/..." />
+                    </div>
+                    <div class="col-span-12 md:col-span-2 flex items-end">
+                      <Button class="w-full" :disabled="savingStorage" @click="createStorage">
+                        <Plus class="mr-1 size-4" /> Add
+                      </Button>
+                    </div>
+                  </div>
+                  <p v-if="storageError" class="text-xs text-destructive">{{ storageError }}</p>
+
+                  <div v-if="service.storages?.length" class="mt-2 overflow-x-auto">
+                    <table class="w-full text-sm">
+                      <thead class="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th class="px-3 py-2">Name</th>
+                          <th class="px-3 py-2">Mount Path</th>
+                          <th class="px-3 py-2">Host Path</th>
+                          <th class="px-3 py-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-border">
+                        <tr v-for="st in service.storages" :key="st.id" class="hover:bg-muted/30">
+                          <td class="px-3 py-2 font-mono text-[13px]">{{ st.name }}</td>
+                          <td class="px-3 py-2 font-mono text-[13px]">{{ st.mountPath }}</td>
+                          <td class="px-3 py-2 font-mono text-[13px] text-muted-foreground">{{ st.hostPath || '—' }}</td>
+                          <td class="px-3 py-2 text-right">
+                            <button class="text-muted-foreground hover:text-foreground" @click="removeStorage(st.id)"><Trash2 class="size-3.5" /></button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </template>
+
             <template v-else-if="activeSection === 'danger'">
               <Card>
                 <CardHeader>
@@ -1527,5 +1789,18 @@ const sectionIcons: Record<string, string> = {
 .number-input-no-spin {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+/* .env editor — dark terminal style, good for KEY=VALUE files */
+.env-editor {
+  tab-size: 4;
+  line-height: 1.6;
+  font-variant-ligatures: none;
+}
+.env-editor::placeholder {
+  color: #52525b;
+  opacity: 1;
+}
+.env-editor:focus {
+  outline: none;
 }
 </style>

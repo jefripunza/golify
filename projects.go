@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -41,7 +42,7 @@ func registerProjects(r fiber.Router) {
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs.Services.Domains.Domain").Preload("Envs.Services.Networks").Preload("Envs.Domains").
+		if err := db.Preload("Envs.Services.Domains.Domain").Preload("Envs.Services.Networks").Preload("Envs.Services.EnvVars").Preload("Envs.Services.Storages").Preload("Envs.Domains").
 			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -108,6 +109,20 @@ func registerProjects(r fiber.Router) {
 								ns = append(ns, fiber.Map{"id": n.ID, "host_port": n.HostPort, "container_port": n.ContainerPort})
 							}
 							return ns
+						}(),
+						"env_vars": func() []fiber.Map {
+							evs := make([]fiber.Map, 0, len(s.EnvVars))
+							for _, ev := range s.EnvVars {
+								evs = append(evs, fiber.Map{"id": ev.ID, "key": ev.Key, "value": ev.Value, "is_build": ev.IsBuild})
+							}
+							return evs
+						}(),
+						"storages": func() []fiber.Map {
+							ss := make([]fiber.Map, 0, len(s.Storages))
+							for _, st := range s.Storages {
+								ss = append(ss, fiber.Map{"id": st.ID, "name": st.Name, "mount_path": st.MountPath, "host_path": st.HostPath})
+							}
+							return ss
 						}(),
 					})
 				}
@@ -187,7 +202,7 @@ func registerProjects(r fiber.Router) {
 
 	auth.Get("/:id", func(c fiber.Ctx) error {
 		var p Project
-		err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Domains").
+		err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Services.EnvVars").Preload("Envs.Services.Storages").Preload("Envs.Domains").
 			First(&p, "id = ?", c.Params("id")).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
@@ -253,6 +268,20 @@ func registerProjects(r fiber.Router) {
 							ns = append(ns, fiber.Map{"id": n.ID, "host_port": n.HostPort, "container_port": n.ContainerPort})
 						}
 						return ns
+					}(),
+					"env_vars": func() []fiber.Map {
+						evs := make([]fiber.Map, 0, len(s.EnvVars))
+						for _, ev := range s.EnvVars {
+							evs = append(evs, fiber.Map{"id": ev.ID, "key": ev.Key, "value": ev.Value, "is_build": ev.IsBuild})
+						}
+						return evs
+					}(),
+					"storages": func() []fiber.Map {
+						ss := make([]fiber.Map, 0, len(s.Storages))
+						for _, st := range s.Storages {
+							ss = append(ss, fiber.Map{"id": st.ID, "name": st.Name, "mount_path": st.MountPath, "host_path": st.HostPath})
+						}
+						return ss
 					}(),
 				})
 			}
@@ -796,6 +825,154 @@ func registerProjects(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": nid})
+	})
+
+	// ─── Environment variables (.env editor) ───────────────────────────────
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/env-vars", func(c fiber.Ctx) error {
+		var rows []ServiceEnvironmentVariable
+		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("created_at asc").Find(&rows).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(rows)
+	})
+
+	auth.Post("/:projectId/environments/:envId/services/:serviceId/env-vars", func(c fiber.Ctx) error {
+		var body struct {
+			Key     string `json:"key"`
+			Value   string `json:"value"`
+			IsBuild bool   `json:"is_build"`
+		}
+		if err := c.Bind().JSON(&body); err != nil || body.Key == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "key required"})
+		}
+		// key must be valid env var name
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(body.Key) {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid key (must be A-Za-z0-9_ starting with letter or _)"})
+		}
+		ev := ServiceEnvironmentVariable{
+			ServiceID: c.Params("serviceId"),
+			Key:       body.Key,
+			Value:     body.Value,
+			IsBuild:   body.IsBuild,
+		}
+		if err := db.Create(&ev).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(ev)
+	})
+
+	auth.Patch("/:projectId/environments/:envId/services/:serviceId/env-vars/:varId", func(c fiber.Ctx) error {
+		var ev ServiceEnvironmentVariable
+		if err := db.First(&ev, "id = ?", c.Params("varId")).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "env var not found"})
+		}
+		var body struct {
+			Key     *string `json:"key"`
+			Value   *string `json:"value"`
+			IsBuild *bool   `json:"is_build"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
+		}
+		if body.Key != nil {
+			if *body.Key == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "key required"})
+			}
+			if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(*body.Key) {
+				return c.Status(400).JSON(fiber.Map{"error": "invalid key"})
+			}
+			ev.Key = *body.Key
+		}
+		if body.Value != nil {
+			ev.Value = *body.Value
+		}
+		if body.IsBuild != nil {
+			ev.IsBuild = *body.IsBuild
+		}
+		if err := db.Save(&ev).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(ev)
+	})
+
+	auth.Delete("/:projectId/environments/:envId/services/:serviceId/env-vars/:varId", func(c fiber.Ctx) error {
+		vid := c.Params("varId")
+		if err := db.Delete(&ServiceEnvironmentVariable{}, "id = ?", vid).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": vid})
+	})
+
+	// ─── Persistent storage (volumes) ──────────────────────────────────────
+	auth.Get("/:projectId/environments/:envId/services/:serviceId/storages", func(c fiber.Ctx) error {
+		var rows []ServicePersistentStorage
+		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("created_at asc").Find(&rows).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(rows)
+	})
+
+	auth.Post("/:projectId/environments/:envId/services/:serviceId/storages", func(c fiber.Ctx) error {
+		var body struct {
+			Name      string `json:"name"`
+			MountPath string `json:"mount_path"`
+			HostPath  string `json:"host_path"`
+		}
+		if err := c.Bind().JSON(&body); err != nil || body.Name == "" || body.MountPath == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name and mount_path required"})
+		}
+		ss := ServicePersistentStorage{
+			ServiceID: c.Params("serviceId"),
+			Name:      body.Name,
+			MountPath: body.MountPath,
+			HostPath:  body.HostPath,
+		}
+		if err := db.Create(&ss).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(201).JSON(ss)
+	})
+
+	auth.Patch("/:projectId/environments/:envId/services/:serviceId/storages/:storageId", func(c fiber.Ctx) error {
+		var ss ServicePersistentStorage
+		if err := db.First(&ss, "id = ?", c.Params("storageId")).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "storage not found"})
+		}
+		var body struct {
+			Name      *string `json:"name"`
+			MountPath *string `json:"mount_path"`
+			HostPath  *string `json:"host_path"`
+		}
+		if err := c.Bind().JSON(&body); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
+		}
+		if body.Name != nil {
+			if *body.Name == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "name required"})
+			}
+			ss.Name = *body.Name
+		}
+		if body.MountPath != nil {
+			if *body.MountPath == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "mount_path required"})
+			}
+			ss.MountPath = *body.MountPath
+		}
+		if body.HostPath != nil {
+			ss.HostPath = *body.HostPath
+		}
+		if err := db.Save(&ss).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(ss)
+	})
+
+	auth.Delete("/:projectId/environments/:envId/services/:serviceId/storages/:storageId", func(c fiber.Ctx) error {
+		sid := c.Params("storageId")
+		if err := db.Delete(&ServicePersistentStorage{}, "id = ?", sid).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"deleted": sid})
 	})
 
 	// ─── Scale service replicas (container instances) ──────────────────────

@@ -37,6 +37,20 @@ export interface Deployment {
   createdAt: string // ISO
 }
 
+export interface ServiceEnvVar {
+  id: ID
+  key: string
+  value: string
+  isBuild: boolean
+}
+
+export interface ServiceStorage {
+  id: ID
+  name: string
+  mountPath: string
+  hostPath: string
+}
+
 export interface Service {
   id: ID
   name: string
@@ -68,6 +82,8 @@ export interface Service {
   podIps?: string[]
   domains?: ServiceDomain[]
   networks?: ServiceNetwork[]
+  envVars?: ServiceEnvVar[]
+  storages?: ServiceStorage[]
   updatedAt: string // ISO
 }
 

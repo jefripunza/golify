@@ -17,6 +17,8 @@ func (m *Environment) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) 
 func (m *Service) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *ServiceDomain) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
 func (m *ServiceNetwork) BeforeCreate(tx *gorm.DB) error { return fillID(&m.ID) }
+func (m *ServiceEnvironmentVariable) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
+func (m *ServicePersistentStorage) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) }
 func (m *Domain) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Server) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Source) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
@@ -105,6 +107,8 @@ type Service struct {
 	Ports        []string         `gorm:"serializer:json" json:"ports"`
 	Domains      []ServiceDomain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
 	Networks     []ServiceNetwork `gorm:"constraint:OnDelete:CASCADE" json:"networks,omitempty"`
+	EnvVars      []ServiceEnvironmentVariable `gorm:"constraint:OnDelete:CASCADE" json:"env_vars,omitempty"`
+	Storages     []ServicePersistentStorage   `gorm:"constraint:OnDelete:CASCADE" json:"storages,omitempty"`
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }
@@ -132,8 +136,31 @@ type ServiceNetwork struct {
 	HostPort      string    `gorm:"size:16;not null" json:"host_port"`        // e.g. 3000
 	ContainerPort string    `gorm:"size:16;default:''" json:"container_port"` // e.g. 3000
 	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// ServiceEnvironmentVariable is a KEY=VALUE environment variable attached to
+// a Service, rendered as .env-style editor rows in the UI.
+type ServiceEnvironmentVariable struct {
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	Key       string    `gorm:"size:255;not null" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	IsBuild   bool      `gorm:"default:false" json:"is_build"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ServicePersistentStorage is a volume/mount attached to a Service.
+type ServicePersistentStorage struct {
+	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	Name      string    `gorm:"size:255;not null" json:"name"`        // volume name
+	MountPath string    `gorm:"size:512;not null" json:"mount_path"`  // container mount path e.g. /data
+	HostPath  string    `gorm:"size:512;default:''" json:"host_path"` // optional host path
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
 // Deployment is a single deploy attempt of a Service. It records when a
 // deploy started, when it finished and whether it succeeded or failed.
 type Deployment struct {
