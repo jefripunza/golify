@@ -44,6 +44,11 @@ func registerDeployments(auth fiber.Router) {
 		}
 		// container name convention from deployments.go: golify-<name>
 		base := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
+		// K8s mode: list pods via kubectl instead of podman.
+		if k8sEnabled(svc) {
+			rows := k8sPods(svc)
+			return c.JSON(rows)
+		}
 		out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}	{{.ID}}	{{.Status}}	{{.Ports}}").CombinedOutput()
 		if err != nil {
 			// podman not available → empty list
@@ -176,6 +181,27 @@ func simulateDeploy(deployID string, svc Service) {
 	for _, ln := range lines {
 		appendDeployLog(deployID, ln)
 	}
+
+	// K8s mode: deploy as a Kubernetes Deployment + Service via kubectl.
+	if k8sEnabled(svc) {
+		name := k8sServiceName(svc)
+		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] mode=k8s → kubectl apply Deployment/Service %s", deployID[:8], name))
+		if err := k8sApply(svc); err != nil {
+			appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] ERROR: %v", deployID[:8], err))
+			markDeployDone(deployID, "failed")
+			return
+		}
+		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] applying manifest OK — waiting for ready", deployID[:8]))
+		if err := k8sWaitReady(svc, svc.Replicas, 120*time.Second); err != nil {
+			appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] WARN: %v", deployID[:8], err))
+		}
+		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] deployment %s ready — service is running", deployID[:8], name))
+		appendDeployLog(deployID, fmt.Sprintf("[deploy:%s] deploy finished OK (K8s)", deployID[:8]))
+		db.Model(&Service{}).Where("id = ?", svc.ID).Update("status", "running")
+		markDeployDone(deployID, "success")
+		return
+	}
+
 	// real container: podman run -d -p 127.0.0.1:<freeport>:80 <image>
 	hostPort, err := pickFreePort()
 	if err != nil {
@@ -366,6 +392,64 @@ func logHandler(ctx *fasthttp.RequestCtx) {
 	}
 	containerID := parts[1]
 
+	// K8s mode: the container id is a pod name → kubectl logs -f.
+	var svc Service
+	if err := db.First(&svc, "id = ?", parts[0]).Error; err == nil && k8sEnabled(svc) {
+		upgrader := websocket.FastHTTPUpgrader{
+			ReadBufferSize:  4096,
+			WriteBufferSize: 4096,
+			CheckOrigin:     func(_ *fasthttp.RequestCtx) bool { return true },
+		}
+		upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+			defer conn.Close()
+			cmd, err := k8sLogStream(containerID)
+			if err != nil {
+				writeWS(conn, []byte(fmt.Sprintf("[log] %v — deploy/start the service first\r\n", err)))
+				time.Sleep(300 * time.Millisecond)
+				return
+			}
+			writeWS(conn, []byte(fmt.Sprintf("[log] connected — streaming %s (live)\r\n", containerID)))
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				writeWS(conn, []byte("[log] pipe error: "+err.Error()+"\r\n"))
+				return
+			}
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				writeWS(conn, []byte("[log] pipe error: "+err.Error()+"\r\n"))
+				return
+			}
+			if err := cmd.Start(); err != nil {
+				writeWS(conn, []byte("[log] start error: "+err.Error()+"\r\n"))
+				return
+			}
+			var wg sync.WaitGroup
+			wg.Add(2)
+			stream := func(r io.Reader) {
+				defer wg.Done()
+				sc := bufio.NewScanner(r)
+				sc.Buffer(make([]byte, 64*1024), 1024*1024)
+				for sc.Scan() {
+					writeWS(conn, []byte(sc.Text()+"\r\n"))
+				}
+			}
+			go stream(stdout)
+			go stream(stderr)
+			go func() {
+				for {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						cmd.Process.Kill()
+						return
+					}
+				}
+			}()
+			cmd.Wait()
+			wg.Wait()
+			writeWS(conn, []byte("[log] stream ended\r\n"))
+		})
+		return
+	}
+
 	upgrader := websocket.FastHTTPUpgrader{
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
@@ -457,6 +541,12 @@ func terminalServiceHandler(ctx *fasthttp.RequestCtx) {
 	svcID := parts[0]
 	if len(parts) == 2 && parts[1] != "" {
 		// explicit replica container → shell straight into it
+		// K8s mode: the id is a pod name → kubectl exec.
+		var svc Service
+		if err := db.First(&svc, "id = ?", svcID).Error; err == nil && k8sEnabled(svc) {
+			terminalHandlerWithCmd(ctx, k8sExec(parts[1]))
+			return
+		}
 		terminalHandler(ctx, "container", parts[1])
 		return
 	}

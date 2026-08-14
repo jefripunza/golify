@@ -146,7 +146,7 @@ function initForm() {
   form.replicas = String(s.replicas ?? 1)
   form.replicasMin = String(s.replicasMin ?? 1)
   form.replicasMax = String(s.replicasMax ?? 1)
-  form.loadBalancer = (s.loadBalancer === 'least_conn' ? 'least_conn' : 'round_robin')
+  form.loadBalancer = (s.loadBalancer === 'least_conn' || s.loadBalancer === 'k8s' ? s.loadBalancer : 'round_robin')
 }
 watch(() => service.value?.id, () => { if (service.value) initForm() }, { immediate: true })
 
@@ -919,6 +919,7 @@ const sectionIcons: Record<string, string> = {
         <p class="mt-0.5 flex items-center gap-2 text-sm">
           <span class="inline-block size-2 rounded-full" :class="service.status === 'running' ? 'bg-green-500' : 'bg-yellow-500'" />
           <span :class="service.status === 'running' ? 'text-green-500' : 'text-yellow-500'">{{ service.status }} (unknown)</span>
+          <Badge v-if="service.loadBalancer === 'k8s'" variant="outline" class="border-sky-500/50 text-sky-500">K8s</Badge>
           <Info class="ml-1 size-3 text-muted-foreground" />
           <RotateCw class="size-3 text-yellow-500" />
         </p>

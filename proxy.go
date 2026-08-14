@@ -356,7 +356,6 @@ func proxyToBackend(c fiber.Ctx, targets []string) error {
 	// Host header on the wire (K8s Ingress routes on the original Host).
 	req.SetRequestURI(upstream + string(c.Request().URI().RequestURI()))
 	req.Header.SetHost(target)
-	log.Printf("[proxy] forwarding %s → %s (Host: %s)", string(c.Request().URI().RequestURI()), target, host)
 	if body := c.Request().Body(); len(body) > 0 {
 		req.SetBody(body)
 	}

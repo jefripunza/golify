@@ -803,6 +803,33 @@ func setServiceStatus(c fiber.Ctx, status string) error {
 		return c.Status(400).JSON(fiber.Map{"error": "service has no container image to control"})
 	}
 
+	// K8s mode: start/stop/restart via kubectl scale / rollout restart.
+	if k8sEnabled(s) {
+		var kerr error
+		switch status {
+		case "running":
+			kerr = k8sScale(s, max(1, s.Replicas))
+		case "stopped":
+			kerr = k8sScale(s, 0)
+		case "restart":
+			kerr = k8sRestart(s)
+		default:
+			kerr = fmt.Errorf("unknown status %q", status)
+		}
+		if kerr != nil {
+			log.Printf("k8s action %s on %s failed (%v); flipping DB status only", status, s.Name, kerr)
+		}
+		dbStatus := status
+		if status == "restart" {
+			dbStatus = "running"
+		}
+		s.Status = dbStatus
+		if err := db.Save(&s).Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"service": s, "runtime": "k8s"})
+	}
+
 	// Real container action via podman (or docker fallback). If the runtime
 	// isn't available on this host (e.g. CI), we gracefully fall back to a
 	// DB status flip so the UI still works.
@@ -871,6 +898,13 @@ func containerNameForReplica(svc Service, replica int) string {
 // when n > current, removes extras when n < current. Returns true when any
 // container action happened.
 func scaleContainers(svc Service, n int) (bool, error) {
+	// K8s mode: kubectl scale deployment --replicas=n.
+	if k8sEnabled(svc) {
+		if err := k8sScale(svc, n); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 	base := containerNameForReplica(svc, 1)
 	// List existing containers for this service.
 	out, err := exec.Command("podman", "ps", "-a", "--filter", "name="+base, "--format", "{{.Names}}").CombinedOutput()

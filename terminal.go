@@ -25,6 +25,13 @@ import (
 // terminalHandler upgrades the connection and spawns the appropriate shell.
 // kind is "server" or "container"; id is the URL segment.
 func terminalHandler(ctx *fasthttp.RequestCtx, kind, id string) {
+	cmd := buildTerminalCmd(kind, id)
+	terminalHandlerWithCmd(ctx, cmd)
+}
+
+// terminalHandlerWithCmd upgrades the connection and runs the given shell
+// command over the WS (used by both the legacy path and the K8s path).
+func terminalHandlerWithCmd(ctx *fasthttp.RequestCtx, cmd *exec.Cmd) {
 	tok := string(ctx.QueryArgs().Peek("token"))
 	if tok == "" {
 		ctx.SetStatusCode(http.StatusUnauthorized)
@@ -45,7 +52,6 @@ func terminalHandler(ctx *fasthttp.RequestCtx, kind, id string) {
 
 	upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
 		defer conn.Close()
-		cmd := buildTerminalCmd(kind, id)
 		runShellOverWS(conn, cmd)
 	})
 }
