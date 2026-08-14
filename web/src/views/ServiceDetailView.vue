@@ -544,8 +544,15 @@ function toggleTerminal(c: LogContainer) {
 }
 watch(activeTab, (tab) => {
   if (tab === 'terminal') {
+    // Reset accordion state when arriving — nothing auto-opens. The user
+    // clicks an accordion to open its WS; no connection until then.
+    for (const c of containers.value) {
+      c.expanded = false
+      c.ws?.close()
+      c.ws = null
+    }
     setTimeout(() => {
-      void loadContainers()
+      void loadContainers(true)
       // init any expanded terminal accordions (after containers load)
       setTimeout(() => {
         for (const c of containers.value) {
@@ -560,6 +567,12 @@ watch(activeTab, (tab) => {
     closeAllTermSlots()
   }
   if (tab === 'logs') {
+    // Reset accordion state on arrival — no auto-open, no accumulated WS.
+    for (const c of containers.value) {
+      c.expanded = false
+      c.ws?.close()
+      c.ws = null
+    }
     setTimeout(() => connectLogs(), 0)
   }
 })
@@ -598,7 +611,7 @@ const logSearch = ref('')
 const linesOptions = [100, 200, 500, 1000]
 
 // fetch replica containers for the service (podman ps, filtered by golify-<name>)
-async function loadContainers() {
+async function loadContainers(resetExpanded = false) {
   containersLoading.value = true
   try {
     const auth = getAuth()
@@ -618,9 +631,9 @@ async function loadContainers() {
         status: r.status || '',
         running: r.running,
         ports: r.ports,
-        expanded: prev?.expanded ?? false,
+        expanded: resetExpanded ? false : (prev?.expanded ?? false),
         lines: prev?.lines ?? [],
-        ws: prev?.ws ?? null,
+        ws: resetExpanded ? null : (prev?.ws ?? null),
         loading: false,
         error: prev?.error ?? '',
         linesLimit: prev?.linesLimit ?? 100,
