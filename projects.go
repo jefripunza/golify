@@ -651,6 +651,15 @@ func registerProjects(r fiber.Router) {
 	})
 
 	// ─── Service domains (subdomain per registered root Domain) ────────────
+	// loadServiceWithDomains fetches a service with its domains (and each
+	// domain's root Domain) preloaded — used to (re)apply the K8s Ingress
+	// whenever a service domain changes, so routing is dynamic.
+	loadServiceWithDomains := func(sid string) (Service, error) {
+		var svc Service
+		err := db.Preload("Domains.Domain").First(&svc, "id = ?", sid).Error
+		return svc, err
+	}
+
 	auth.Get("/:projectId/environments/:envId/services/:serviceId/domains", func(c fiber.Ctx) error {
 		var rows []ServiceDomain
 		if err := db.Preload("Domain").Where("service_id = ?", c.Params("serviceId")).Order("created_at asc").Find(&rows).Error; err != nil {
@@ -703,6 +712,15 @@ func registerProjects(r fiber.Router) {
 		if err := ensureSelfSignedCert(fullHost); err != nil {
 			log.Printf("[ssl] self-signed cert for %s: %v", fullHost, err)
 		}
+		// keep the K8s Ingress in sync: the new subdomain must be routable
+		// immediately (dynamic ingress), not only after the next deploy.
+		if svc, lerr := loadServiceWithDomains(c.Params("serviceId")); lerr == nil {
+			if svc.LoadBalancer == "k8s" {
+				if kerr := k8sApplyIngress(svc); kerr != nil {
+					log.Printf("[k8s] apply ingress after add domain: %v", kerr)
+				}
+			}
+		}
 		notify("domain", "created", string(sd.ID))
 		return c.Status(201).JSON(sd)
 	})
@@ -711,6 +729,14 @@ func registerProjects(r fiber.Router) {
 		did := c.Params("domainId")
 		if err := db.Delete(&ServiceDomain{}, "id = ?", did).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// re-apply the Ingress so the removed subdomain stops routing
+		if svc, lerr := loadServiceWithDomains(c.Params("serviceId")); lerr == nil {
+			if svc.LoadBalancer == "k8s" {
+				if kerr := k8sApplyIngress(svc); kerr != nil {
+					log.Printf("[k8s] apply ingress after delete domain: %v", kerr)
+				}
+			}
 		}
 		notify("domain", "deleted", did)
 		return c.JSON(fiber.Map{"deleted": did})
@@ -748,6 +774,15 @@ func registerProjects(r fiber.Router) {
 		}
 		if err := db.Save(&sd).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		// dynamic ingress: re-apply so the new/changed subdomain routes
+		// immediately (no deploy needed).
+		if svc, lerr := loadServiceWithDomains(c.Params("serviceId")); lerr == nil {
+			if svc.LoadBalancer == "k8s" {
+				if kerr := k8sApplyIngress(svc); kerr != nil {
+					log.Printf("[k8s] apply ingress after update domain: %v", kerr)
+				}
+			}
 		}
 		notify("domain", "updated", did)
 		return c.JSON(sd)
