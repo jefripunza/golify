@@ -16,6 +16,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useProjectsStore } from '@/stores'
 import { getAuth, authed } from '@/lib/api'
 import type { Deployment, Service } from '@/lib/types'
@@ -635,6 +643,25 @@ function statusVariant(s?: string) {
     default: return 'secondary'
   }
 }
+const showStopConfirm = ref(false)
+const stopping = ref(false)
+async function confirmStop() {
+  // open the custom confirmation dialog instead of a native confirm
+  showStopConfirm.value = true
+}
+async function doStop() {
+  if (!service.value) return
+  stopping.value = true
+  try {
+    await store.stop(projectId.value, envId.value, serviceId.value)
+    showStopConfirm.value = false
+  } catch (e: any) {
+    console.error('stop failed:', e)
+  } finally {
+    stopping.value = false
+  }
+}
+
 function action(a: 'start' | 'stop' | 'restart') {
   if (!service.value) return
   if (a === 'start') store.start(projectId.value, envId.value, serviceId.value)
@@ -1151,10 +1178,10 @@ const sectionIcons: Record<string, string> = {
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <Button size="sm" :disabled="service.status === 'running'" @click="deployNow">
+        <Button v-if="service.status !== 'running'" size="sm" @click="deployNow">
           <Play class="mr-1 size-4" />Start
         </Button>
-        <Button size="sm" variant="outline" :disabled="service.status === 'stopped'" @click="action('stop')">
+        <Button v-if="service.status === 'running'" size="sm" variant="destructive" @click="confirmStop">
           <Square class="mr-1 size-4" />Stop
         </Button>
         <Button size="sm" variant="outline" @click="action('restart')">
@@ -1162,6 +1189,29 @@ const sectionIcons: Record<string, string> = {
         </Button>
       </div>
     </header>
+
+    <!-- Stop confirmation dialog -->
+    <Dialog v-model:open="showStopConfirm">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2 text-destructive">
+            <Square class="size-4" /> Stop Service
+          </DialogTitle>
+          <DialogDescription>
+            Yakin ingin menghentikan service <span class="font-medium text-foreground">{{ service.name }}</span>?
+            <br />Semua request ke service ini akan berhenti berjalan.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2">
+          <Button variant="outline" :disabled="stopping" @click="showStopConfirm = false">Batal</Button>
+          <Button variant="destructive" :disabled="stopping" @click="doStop">
+            <Loader2 v-if="stopping" class="mr-1 size-4 animate-spin" />
+            <Square v-else class="mr-1 size-4" />
+            {{ stopping ? 'Menghentikan…' : 'Ya, Stop' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <!-- Top tab bar: buttons (desktop) -->
     <div class="hidden flex-wrap gap-1 border-b text-sm sm:flex">
