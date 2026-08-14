@@ -70,6 +70,12 @@ func proxyDomainGate(c fiber.Ctx) error {
 		}
 		return proxyToBackend(c, targets)
 	}
+	// No routable target: if a service IS attached to this host but it's
+	// stopped (scale 0 / no container), show the same "service not found"
+	// notice instead of an nginx error page.
+	if st := serviceStatusForHost(host); st != "" && st != "running" {
+		return plainNotice(c, "service not found !!!")
+	}
 	return c.Next()
 }
 
@@ -140,6 +146,28 @@ func checkDomainRegistration(host string) int {
 	return 1
 }
 
+// serviceStatusForHost resolves the service attached to a request hostname
+// (via ServiceDomain) and returns its current status ("" when none).
+func serviceStatusForHost(host string) string {
+	candidates := []string{host}
+	parts := strings.Split(host, ".")
+	if len(parts) >= 3 {
+		candidates = append(candidates, strings.Join(parts[len(parts)-2:], "."))
+	}
+	var sd ServiceDomain
+	if err := db.Preload("Domain").
+		Joins("JOIN domains d ON d.id = service_domains.domain_id").
+		Where("CASE WHEN service_domains.subdomain = '' THEN d.host IN ? ELSE CONCAT(service_domains.subdomain, '.', d.host) IN ? END", candidates, candidates).
+		First(&sd).Error; err != nil {
+		return ""
+	}
+	var svc Service
+	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
+		return ""
+	}
+	return svc.Status
+}
+
 // serviceProxyTarget resolves the container backend for a request hostname.
 // With replicas it returns a list of upstreams (all running replicas) so the
 // proxy can load-balance; single replica keeps the old single-target path.
@@ -165,6 +193,12 @@ func serviceProxyTargets(host, scheme string) []string {
 	}
 	var svc Service
 	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
+		return nil
+	}
+	// stopped service (scale 0 / no containers) → no routable target.
+	// The proxy layer then shows the "service not found" notice instead of
+	// an nginx 503/502 error page from the (empty) ingress backend.
+	if svc.Status != "" && svc.Status != "running" {
 		return nil
 	}
 	// K8s mode: traffic goes through the cluster's Ingress controller.
