@@ -131,7 +131,7 @@ async function confirmDelete() {
       <div>
         <h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
         <p class="text-sm text-muted-foreground">
-          Each project is a folder of environments. Every environment is a Kubernetes cluster (kind).
+          Each project is a folder of environments. Every environment is a Kubernetes namespace in the shared cluster (golify).
         </p>
       </div>
       <Button size="sm" @click="openCreate">

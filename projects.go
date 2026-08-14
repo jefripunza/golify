@@ -69,6 +69,7 @@ func registerProjects(r fiber.Router) {
 						"replicas":          s.Replicas,
 						"replicas_min":      s.ReplicasMin,
 						"replicas_max":      s.ReplicasMax,
+						"load_balancer":     s.LoadBalancer,
 						"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 						"ports": s.Ports, "created_at": s.CreatedAt,
 						"updated_at": s.UpdatedAt,
@@ -192,6 +193,7 @@ func registerProjects(r fiber.Router) {
 					"replicas":          s.Replicas,
 					"replicas_min":      s.ReplicasMin,
 					"replicas_max":      s.ReplicasMax,
+					"load_balancer":     s.LoadBalancer,
 					"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
 					"domains": func() []fiber.Map {

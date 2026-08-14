@@ -149,6 +149,7 @@ function mapSvc(s: any): Service {
     replicas: s.replicas ?? 1,
     replicasMin: s.replicas_min ?? 1,
     replicasMax: s.replicas_max ?? 1,
+    loadBalancer: s.load_balancer === 'least_conn' || s.load_balancer === 'k8s' ? s.load_balancer : 'round_robin',
     status: s.status ?? 'stopped',
     cpu: s.cpu,
     memory: s.memory,
