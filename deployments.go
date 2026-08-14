@@ -436,9 +436,9 @@ func logHandler(ctx *fasthttp.RequestCtx) {
 	})
 }
 
-// terminalServiceHandler — alias: /api/ws/terminal/:serviceId resolves the
-// service to its container and shells in. Until a container exists it falls
-// back to a host shell (same as terminalHandler "server").
+// terminalServiceHandler — /api/ws/terminal/:serviceId resolves the service
+// to its container and shells in; /api/ws/terminal/:serviceId/:containerId
+// shells into the SPECIFIC replica container (per-accordion terminal).
 func terminalServiceHandler(ctx *fasthttp.RequestCtx) {
 	if !authWS(ctx) {
 		return
@@ -452,8 +452,16 @@ func terminalServiceHandler(ctx *fasthttp.RequestCtx) {
 		terminalHandler(ctx, "server", "service-not-found")
 		return
 	}
+	// /terminal/:serviceId/:containerId — split the two segments
+	parts := strings.SplitN(sid, "/", 2)
+	svcID := parts[0]
+	if len(parts) == 2 && parts[1] != "" {
+		// explicit replica container → shell straight into it
+		terminalHandler(ctx, "container", parts[1])
+		return
+	}
 	var svc Service
-	if err := db.First(&svc, "id = ?", sid).Error; err != nil {
+	if err := db.First(&svc, "id = ?", svcID).Error; err != nil {
 		terminalHandler(ctx, "server", "service-not-found")
 		return
 	}

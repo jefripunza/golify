@@ -386,15 +386,25 @@ function action(a: 'start' | 'stop' | 'restart') {
   }
 }
 
-// ─── Terminal (initialized lazily when the Terminal tab is opened) ────────
-const termEl = ref<HTMLDivElement | null>(null)
-let term: Terminal | null = null
-let fit: FitAddon | null = null
-let ws: WebSocket | null = null
+// ─── Terminal (accordion per replica/container, one xterm per accordion) ──
+// Each expanded accordion creates its OWN xterm Terminal + WS to
+// /api/ws/terminal/:serviceId/:containerName
+interface TermSlot {
+  term: Terminal | null
+  fit: FitAddon | null
+  ws: WebSocket | null
+}
+const termSlots = new Map<string, TermSlot>()
 
-function initTerminal() {
-  if (!termEl.value || term) return
-  term = new Terminal({
+function initTerminalFor(c: LogContainer) {
+  const el = document.getElementById(`term-${c.id}`)
+  if (!el) return
+  const existing = termSlots.get(c.id)
+  if (existing?.term) {
+    existing.fit?.fit()
+    return
+  }
+  const term = new Terminal({
     cursorBlink: true,
     fontSize: 13,
     theme: {
@@ -404,47 +414,81 @@ function initTerminal() {
       selectionBackground: '#21262d',
     },
   })
-  fit = new FitAddon()
+  const fit = new FitAddon()
   term.loadAddon(fit)
-  term.open(termEl.value)
+  term.open(el)
   fit.fit()
-  if (service.value?.status === 'stopped') {
-    term.writeln('\x1b[33mService is stopped — start it to open a terminal.\x1b[0m')
+  const slot: TermSlot = { term, fit, ws: null }
+  termSlots.set(c.id, slot)
+
+  if (!c.running) {
+    term.writeln('\x1b[33mContainer stopped — start it to open a terminal.\x1b[0m')
     return
   }
   const auth = getAuth()
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const url = `${proto}//${location.host}/api/ws/terminal/${encodeURIComponent(serviceId.value)}?token=${encodeURIComponent(auth?.token ?? '')}`
-  try { ws = new WebSocket(url) } catch { ws = null }
-  if (ws) {
-    ws.onopen = () => {
-      term?.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
-      term?.writeln(`connected to service: ${service.value?.name ?? serviceId.value} via WS`)
-      term?.writeln('')
+  // connect to the SPECIFIC replica container (per-accordion WS)
+  const url = `${proto}//${location.host}/api/ws/terminal/${encodeURIComponent(serviceId.value)}/${encodeURIComponent(c.name)}?token=${encodeURIComponent(auth?.token ?? '')}`
+  try { slot.ws = new WebSocket(url) } catch { slot.ws = null }
+  if (slot.ws) {
+    slot.ws.onopen = () => {
+      term.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
+      term.writeln(`connected to replica: ${c.replicaId || c.name} via WS`)
+      term.writeln('')
     }
-    ws.onmessage = (ev) => term?.write(String(ev.data))
-    ws.onclose = () => term?.writeln('\r\n\x1b[31m[connection closed]\x1b[0m')
-    ws.onerror = () => term?.writeln('\r\n\x1b[31m[websocket error]\x1b[0m')
+    slot.ws.onmessage = (ev) => term.write(String(ev.data))
+    slot.ws.onclose = () => term.writeln('\r\n\x1b[31m[connection closed]\x1b[0m')
+    slot.ws.onerror = () => term.writeln('\r\n\x1b[31m[websocket error]\x1b[0m')
   } else {
     term.writeln('\x1b[31mWS not available\x1b[0m')
   }
-  term.onData((data) => ws?.send(data))
+  term.onData((data) => slot.ws?.send(data))
+}
+function closeTermSlot(c: LogContainer) {
+  const slot = termSlots.get(c.id)
+  if (slot?.ws) { slot.ws.close(); slot.ws = null }
+}
+function disposeTermSlot(c: LogContainer) {
+  const slot = termSlots.get(c.id)
+  if (slot) {
+    slot.ws?.close()
+    slot.term?.dispose()
+    termSlots.delete(c.id)
+  }
+}
+function closeAllTermSlots() {
+  for (const slot of termSlots.values()) {
+    slot.ws?.close()
+    slot.term?.dispose()
+  }
+  termSlots.clear()
+}
+// expand/collapse a terminal accordion
+function toggleTerminal(c: LogContainer) {
+  c.expanded = !c.expanded
+  if (c.expanded) setTimeout(() => initTerminalFor(c), 50)
 }
 watch(activeTab, (tab) => {
   if (tab === 'terminal') {
     setTimeout(() => {
-      initTerminal()
-      fit?.fit()
+      void loadContainers()
+      // init any expanded terminal accordions (after containers load)
+      setTimeout(() => {
+        for (const c of containers.value) {
+          if (c.expanded) {
+            initTerminalFor(c)
+            termSlots.get(c.id)?.fit?.fit()
+          }
+        }
+      }, 300)
     }, 0)
   } else {
-    ws?.close()
-    ws = null
+    closeAllTermSlots()
   }
   if (tab === 'logs') {
     setTimeout(() => connectLogs(), 0)
   }
 })
-watch(termEl, () => setTimeout(() => fit?.fit(), 0))
 // When the service flips to running and we're on the Logs tab, connect.
 watch(() => service.value?.status, (s) => {
   if (s === 'running' && activeTab.value === 'logs') {
@@ -453,11 +497,7 @@ watch(() => service.value?.status, (s) => {
 })
 onBeforeUnmount(() => {
   closeAllLogWS()
-  ws?.close()
-  ws = null
-  term?.dispose()
-  term = null
-  fit = null
+  closeAllTermSlots()
 })
 
 // ─── Logs: accordion per replica/container, each with its OWN websocket ────
@@ -479,12 +519,12 @@ interface LogContainer {
 
 const containers = ref<LogContainer[]>([])
 const containersLoading = ref(false)
+const containersError = ref('')
 const logSearch = ref('')
 const linesOptions = [100, 200, 500, 1000]
 
 // fetch replica containers for the service (podman ps, filtered by golify-<name>)
 async function loadContainers() {
-  if (!service.value) return
   containersLoading.value = true
   try {
     const auth = getAuth()
@@ -523,8 +563,6 @@ async function loadContainers() {
     containersLoading.value = false
   }
 }
-
-const containersError = ref('')
 
 // toggle accordion: expand → connect WS; collapse → close WS
 function toggleContainer(c: LogContainer) {
@@ -744,6 +782,8 @@ async function deployNow() {
 onMounted(() => {
   store.fetchRootDomains()
   loadDeployments()
+  // containers needed for Logs & Terminal accordions (load once on mount)
+  void loadContainers()
 })
 
 // refresh deployments whenever the tab becomes active (new deploys appear)
@@ -1321,25 +1361,39 @@ const sectionIcons: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Terminal (gated: only when service is running) -->
+    <!-- Terminal: accordion per replica/container, one xterm per accordion -->
     <div v-else-if="activeTab === 'terminal'">
-      <Card>
-        <CardHeader>
-          <CardTitle>Terminal</CardTitle>
-          <CardDescription v-if="service.status !== 'running'">
-            Service is <span class="text-yellow-500">{{ service.status }}</span> — start the service to open a terminal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent class="p-2">
-          <div v-if="service.status === 'running'">
-            <div ref="termEl" class="h-80 rounded bg-[#0e1117]" />
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-lg font-semibold">Terminal</h2>
+        <Button variant="outline" size="sm" class="gap-1.5" @click="loadContainers()">
+          <RefreshCw class="size-3.5" /> Refresh
+        </Button>
+      </div>
+      <div class="mt-3 space-y-2">
+        <div v-for="c in containers" :key="c.id" class="overflow-hidden rounded-md border">
+          <button
+            class="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+            @click="toggleTerminal(c)"
+          >
+            <span class="flex min-w-0 items-center gap-2">
+              <ChevronDown class="size-4 shrink-0 text-muted-foreground transition-transform" :class="c.expanded ? '' : '-rotate-90'" />
+              <span class="inline-block size-2 shrink-0 rounded-full" :class="c.running ? 'bg-green-500' : 'bg-yellow-500'" />
+              <span class="truncate font-mono text-sm">{{ c.replicaId || c.name }}</span>
+            </span>
+            <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+              <span v-if="c.ports" class="hidden sm:inline">{{ c.ports }}</span>
+              <span :class="c.running ? 'text-green-500' : 'text-yellow-500'">{{ c.running ? 'running' : 'stopped' }}</span>
+            </span>
+          </button>
+          <div v-if="c.expanded" class="border-t bg-muted/30 p-2">
+            <div :id="`term-${c.id}`" class="h-80 rounded bg-[#0e1117]" />
           </div>
-          <div v-else class="flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
-            <Box class="size-6 text-muted-foreground" />
-            <p class="text-sm text-muted-foreground">Terminal is unavailable while the service is stopped.</p>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div v-if="!containers.length" class="mt-3 flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
+          <Box class="size-6 text-muted-foreground" />
+          <p class="text-sm text-muted-foreground">No containers found — deploy the service first.</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>

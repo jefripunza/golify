@@ -142,9 +142,11 @@ func wsRequestHandler(ctx *fasthttp.RequestCtx) bool {
 		logHandler(ctx)
 		return true
 	}
-	// /api/ws/terminal/:serviceId — container terminal for a service
-	if serviceID, ok := matchWSPath(rel, "/terminal/"); ok {
-		_ = serviceID
+	// /api/ws/terminal/:serviceId/:containerId — container terminal (podman
+	// exec) for a SPECIFIC replica/container, OR /api/ws/terminal/:serviceId
+	// for the legacy single-terminal path. terminalServiceHandler parses the
+	// segments itself (container id = last path segment when present).
+	if strings.HasPrefix(rel, "/terminal/") {
 		terminalServiceHandler(ctx)
 		return true
 	}
