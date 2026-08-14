@@ -109,15 +109,20 @@ type Service struct {
 	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
-// ServiceDomain is a domain/subdomain attached to a single Service,
-// mapped to a specific port of that service (Coolify-style).
+// ServiceDomain links a Service to a registered root Domain (Domains menu)
+// via a subdomain. The full host is <subdomain>.<domain.host> (bare root when
+// subdomain is empty). Uniqueness is on (subdomain, domain_id) — one
+// subdomain per root domain can only point to one service (DNS semantics).
 type ServiceDomain struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	ServiceID UUID      `gorm:"not null;uniqueIndex:idx_service_host;size:36" json:"service_id"`
-	Host      string    `gorm:"size:255;not null;uniqueIndex:idx_service_host" json:"host"` // e.g. app.example.com — unique per service
-	Port      string    `gorm:"size:16;default:'80'" json:"port"` // target port on the service
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           UUID      `gorm:"primaryKey;size:36" json:"id"`
+	ServiceID    UUID      `gorm:"not null;index;size:36" json:"service_id"`
+	DomainID     UUID      `gorm:"not null;uniqueIndex:idx_sd_subdomain_domain;size:36" json:"domain_id"`
+	Subdomain    string    `gorm:"size:255;not null;uniqueIndex:idx_sd_subdomain_domain" json:"subdomain"`
+	IsForceHTTPS bool      `gorm:"default:false" json:"is_force_https"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	// belongs-to relation to the registered root domain (FK = domain_id)
+	Domain *Domain `json:"domain,omitempty"`
 }
 // ServiceNetwork is a port mapping attached to a single Service
 // (host port → container port), stored in the service_networks table.

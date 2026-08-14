@@ -212,70 +212,75 @@ async function saveGeneral() {
 
 // ─── Root domains (dropdown for subdomain picker) ─────────────────────────
 const rootDomains = computed(() => store.rootDomains)
-const selectedRootDomain = ref('')
-function availableRootDomains(): string[] {
+const selectedRootDomainId = ref('')
+function availableRootDomains(): { id: string; host: string }[] {
   const roots = rootDomains.value
-  if (selectedRootDomain.value && !roots.includes(selectedRootDomain.value)) {
-    return [selectedRootDomain.value, ...roots]
+  if (selectedRootDomainId.value && !roots.some((r) => r.id === selectedRootDomainId.value)) {
+    const missing = roots.find((r) => r.host === selectedRootDomainId.value)
+    if (!missing) return roots
   }
   return roots
 }
+function selectedRootDomainHost(): string {
+  return rootDomains.value.find((r) => r.id === selectedRootDomainId.value)?.host ?? ''
+}
 
-// ─── Service domains (subdomain + root domain + port → host) ──────────────
-const newDomain = reactive({ subdomain: '', port: '80' })
+// ─── Service domains (subdomain + root domain FK + force-https) ───────────
+const newDomain = reactive({ subdomain: '', isForceHTTPS: false })
 const domainError = ref('')
 const editingDomainId = ref<string | null>(null)
 function buildDomainHost(): string {
   const sub = newDomain.subdomain.trim().replace(/^\.+/, '')
-  const root = selectedRootDomain.value.trim().replace(/^\.+/, '')
-  if (!root) return sub
+  const root = selectedRootDomainHost()
+  if (!root) return ''
   return sub ? `${sub}.${root}` : root
 }
 async function addOrUpdateDomain() {
   const host = buildDomainHost()
-  if (!host) {
-    domainError.value = 'Fill the subdomain or pick a root domain first.'
+  const rootId = selectedRootDomainId.value
+  if (!rootId || !host) {
+    domainError.value = 'Pick a root domain first (Domains menu), then type a subdomain.'
     return
   }
-  // Unique check: same host (subdomain+domain, incl. bare root) not allowed twice.
+  // Unique check: same subdomain on the same root domain not allowed twice.
   const svc = service.value
   const exists = (svc?.domains ?? []).some(
-    (d) => d.host === host && d.id !== editingDomainId.value,
+    (d) => d.domainId === rootId && d.subdomain === newDomain.subdomain.trim() && d.id !== editingDomainId.value,
   )
   if (exists) {
-    domainError.value = `Domain already exists: ${host}`
+    domainError.value = `Subdomain already in use for this domain: ${newDomain.subdomain.trim()}`
     return
   }
   domainError.value = ''
-  const port = newDomain.port.trim() || '80'
   try {
     if (editingDomainId.value) {
-      await store.updateServiceDomain(projectId.value, envId.value, serviceId.value, editingDomainId.value, { host, port })
+      await store.updateServiceDomain(projectId.value, envId.value, serviceId.value, editingDomainId.value, {
+        subdomain: newDomain.subdomain.trim(),
+        is_force_https: newDomain.isForceHTTPS,
+      })
     } else {
-      await store.addServiceDomain(projectId.value, envId.value, serviceId.value, host, port)
+      await store.addServiceDomain(projectId.value, envId.value, serviceId.value, {
+        domain_id: rootId,
+        subdomain: newDomain.subdomain.trim(),
+        is_force_https: newDomain.isForceHTTPS,
+      })
     }
     resetDomainForm()
   } catch (e: any) {
     domainError.value = e?.message || 'Failed to save domain'
   }
 }
-function editDomain(d: { id: string; host: string; port: string }) {
+function editDomain(d: { id: string; subdomain: string; domainId: string; isForceHTTPS: boolean }) {
   editingDomainId.value = d.id
-  // Split host into subdomain + root: first label is subdomain, rest is root.
-  const parts = d.host.split('.')
-  if (parts.length >= 2) {
-    newDomain.subdomain = parts[0]
-    selectedRootDomain.value = parts.slice(1).join('.')
-  } else {
-    newDomain.subdomain = ''
-    selectedRootDomain.value = d.host
-  }
-  newDomain.port = d.port
+  newDomain.subdomain = d.subdomain ?? ''
+  selectedRootDomainId.value = d.domainId
+  newDomain.isForceHTTPS = !!d.isForceHTTPS
 }
 function resetDomainForm() {
   editingDomainId.value = null
   newDomain.subdomain = ''
-  newDomain.port = '80'
+  newDomain.isForceHTTPS = false
+  selectedRootDomainId.value = ''
 }
 async function removeDomain(did: string) {
   try {
@@ -1041,7 +1046,7 @@ const sectionIcons: Record<string, string> = {
               </CardContent>
             </Card>
 
-            <!-- Domains (col 6) — subdomain + root domain dropdown + port -->
+            <!-- Domains (col 6) — subdomain + root domain FK + force-https -->
             <Card class="col-span-12 md:col-span-6">
               <CardHeader class="pb-2">
                 <CardDescription class="flex items-center gap-1">
@@ -1049,20 +1054,20 @@ const sectionIcons: Record<string, string> = {
                 </CardDescription>
                 <div class="flex flex-col gap-2">
                   <div class="flex gap-2">
-                    <Input v-model="newDomain.subdomain" placeholder="subdomain" class="flex-1" />
                     <select
-                      v-model="selectedRootDomain"
-                      class="h-9 w-40 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      v-model="selectedRootDomainId"
+                      class="h-9 w-44 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <option value="">— domain —</option>
-                      <option v-for="d in availableRootDomains()" :key="d" :value="d">{{ d }}</option>
+                      <option value="">— root domain —</option>
+                      <option v-for="d in availableRootDomains()" :key="d.id" :value="d.id">{{ d.host }}</option>
                     </select>
-                    <Input v-model="newDomain.port" placeholder="80" class="w-20" />
+                    <Input v-model="newDomain.subdomain" placeholder="subdomain (opsional)" class="flex-1" />
                   </div>
                   <div class="flex items-center justify-between gap-2">
-                    <p class="text-xs text-muted-foreground">
-                      Preview: <span class="font-mono">{{ buildDomainHost() || '—' }}</span>
-                    </p>
+                    <label class="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input v-model="newDomain.isForceHTTPS" type="checkbox" class="size-3.5 accent-primary" />
+                      Force HTTPS
+                    </label>
                     <Button
                       size="sm"
                       variant="outline"
@@ -1074,19 +1079,24 @@ const sectionIcons: Record<string, string> = {
                       {{ editingDomainId ? 'Update' : 'Add' }}
                     </Button>
                   </div>
+                  <p class="text-xs text-muted-foreground">
+                    Preview: <span class="font-mono">{{ buildDomainHost() || '—' }}</span>
+                  </p>
                 </div>
                 <p v-if="domainError" class="text-xs text-destructive">{{ domainError }}</p>
               </CardHeader>
               <CardContent class="grid gap-1.5">
                 <div v-for="d in service.domains ?? []" :key="d.id" class="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
-                  <span class="truncate font-mono">{{ d.host }}</span>
                   <span class="flex items-center gap-2">
-                    <Badge variant="secondary">→ :{{ d.port }}</Badge>
+                    <span class="truncate font-mono">{{ d.host }}</span>
+                    <Badge v-if="d.isForceHTTPS" variant="secondary">HTTPS</Badge>
+                  </span>
+                  <span class="flex items-center gap-2">
                     <button class="text-muted-foreground hover:text-foreground" @click="editDomain(d)"><Pencil class="size-3.5" /></button>
                     <button class="text-destructive hover:text-destructive/80" @click="removeDomain(d.id)"><Trash2 class="size-3.5" /></button>
                   </span>
                 </div>
-                <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains yet — each domain can point to a different port.</p>
+                <p v-if="!(service.domains ?? []).length" class="text-xs text-muted-foreground">No domains yet — pick a root domain (registered in the Domains menu) and a subdomain.</p>
               </CardContent>
             </Card>
 

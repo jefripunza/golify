@@ -9,8 +9,12 @@ export type ServiceStatus = 'running' | 'stopped' | 'building' | 'error' | 'depl
 
 export interface ServiceDomain {
   id: ID
+  subdomain: string
+  domainId: ID
+  domain?: { id: ID; host: string }
+  isForceHTTPS: boolean
+  /** full host: <subdomain>.<domain.host> or bare <domain.host> */
   host: string
-  port: string
 }
 
 export interface ServiceNetwork {

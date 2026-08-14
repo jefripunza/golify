@@ -123,6 +123,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("gorm open: %v", err)
 	}
+	// v0.2 service_domains redesign: old rows used `host`/`port` columns with a
+	// unique service_id+host index. New model uses `domain_id` + `subdomain` +
+	// `is_force_https` (unique on subdomain+domain_id). SQLite cannot add NOT
+	// NULL columns to a non-empty table, so drop the old table and let
+	// AutoMigrate recreate it with the new schema.
+	if db.Migrator().HasTable("service_domains") && !db.Migrator().HasColumn("service_domains", "domain_id") {
+		log.Println("[migrate] dropping legacy service_domains (host/port schema) → recreated by AutoMigrate")
+		if err := db.Migrator().DropTable(&ServiceDomain{}); err != nil {
+			log.Fatalf("drop legacy service_domains: %v", err)
+		}
+	}
 	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}

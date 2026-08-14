@@ -41,7 +41,7 @@ func registerProjects(r fiber.Router) {
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Domains").
+		if err := db.Preload("Envs.Services.Domains.Domain").Preload("Envs.Services.Networks").Preload("Envs.Domains").
 			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -76,7 +76,17 @@ func registerProjects(r fiber.Router) {
 						"domains": func() []fiber.Map {
 							ds := make([]fiber.Map, 0, len(s.Domains))
 							for _, d := range s.Domains {
-								ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
+								host := d.Subdomain
+								if host != "" {
+									host += "."
+								}
+								if d.Domain != nil {
+									host += d.Domain.Host
+								}
+								ds = append(ds, fiber.Map{
+									"id": d.ID, "subdomain": d.Subdomain, "is_force_https": d.IsForceHTTPS,
+									"domain_id": d.DomainID, "host": host,
+								})
 							}
 							return ds
 						}(),
@@ -199,7 +209,17 @@ func registerProjects(r fiber.Router) {
 					"domains": func() []fiber.Map {
 						ds := make([]fiber.Map, 0, len(s.Domains))
 						for _, d := range s.Domains {
-							ds = append(ds, fiber.Map{"id": d.ID, "host": d.Host, "port": d.Port})
+							host := d.Subdomain
+							if host != "" {
+								host += "."
+							}
+							if d.Domain != nil {
+								host += d.Domain.Host
+							}
+							ds = append(ds, fiber.Map{
+								"id": d.ID, "subdomain": d.Subdomain, "is_force_https": d.IsForceHTTPS,
+								"domain_id": d.DomainID, "host": host,
+							})
 						}
 						return ds
 					}(),
@@ -577,10 +597,10 @@ func registerProjects(r fiber.Router) {
 		return c.JSON(svc)
 	})
 
-	// ─── Service domains (many domains/subdomains per service, each → port) ──
+	// ─── Service domains (subdomain per registered root Domain) ────────────
 	auth.Get("/:projectId/environments/:envId/services/:serviceId/domains", func(c fiber.Ctx) error {
 		var rows []ServiceDomain
-		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("host asc").Find(&rows).Error; err != nil {
+		if err := db.Preload("Domain").Where("service_id = ?", c.Params("serviceId")).Order("created_at asc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(rows)
@@ -588,35 +608,47 @@ func registerProjects(r fiber.Router) {
 
 	auth.Post("/:projectId/environments/:envId/services/:serviceId/domains", func(c fiber.Ctx) error {
 		var body struct {
-			Host string `json:"host"`
-			Port string `json:"port"`
+			DomainID     string `json:"domain_id"`
+			Subdomain    string `json:"subdomain"`
+			IsForceHTTPS bool   `json:"is_force_https"`
 		}
-		if err := c.Bind().JSON(&body); err != nil || body.Host == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "host required"})
+		if err := c.Bind().JSON(&body); err != nil || body.DomainID == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "domain_id required"})
 		}
-		if body.Port == "" {
-			body.Port = "80"
+		// the root domain must exist (created first in the Domains menu)
+		var dom Domain
+		if err := db.First(&dom, "id = ?", body.DomainID).Error; err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "root domain not found — create it in the Domains menu first"})
 		}
-		// unique check: same host (subdomain+domain combo, incl. bare root) not allowed twice per service
+		body.Subdomain = strings.ToLower(strings.TrimSpace(body.Subdomain))
+		// unique on (subdomain, domain_id): one subdomain per root domain
 		var count int64
-		if err := db.Model(&ServiceDomain{}).Where("service_id = ? AND host = ?", c.Params("serviceId"), body.Host).Count(&count).Error; err != nil {
+		if err := db.Model(&ServiceDomain{}).
+			Where("subdomain = ? AND domain_id = ?", body.Subdomain, body.DomainID).
+			Count(&count).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		if count > 0 {
-			return c.Status(409).JSON(fiber.Map{"error": "domain already exists: " + body.Host})
+			return c.Status(409).JSON(fiber.Map{"error": "subdomain already in use for this domain: " + body.Subdomain})
 		}
 		sd := ServiceDomain{
-			ServiceID: c.Params("serviceId"),
-			Host:      body.Host,
-			Port:      body.Port,
+			ServiceID:    c.Params("serviceId"),
+			DomainID:     body.DomainID,
+			Subdomain:    body.Subdomain,
+			IsForceHTTPS: body.IsForceHTTPS,
 		}
 		if err := db.Create(&sd).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		fullHost := sd.Subdomain
+		if sd.Subdomain != "" {
+			fullHost += "."
+		}
+		fullHost += dom.Host
 		// generate a self-signed cert so HTTPS works for this domain right away
 		// (real ACME/Let's Encrypt can replace it later — loader prefers LE dir).
-		if err := ensureSelfSignedCert(body.Host); err != nil {
-			log.Printf("[ssl] self-signed cert for %s: %v", body.Host, err)
+		if err := ensureSelfSignedCert(fullHost); err != nil {
+			log.Printf("[ssl] self-signed cert for %s: %v", fullHost, err)
 		}
 		notify("domain", "created", string(sd.ID))
 		return c.Status(201).JSON(sd)
@@ -631,7 +663,7 @@ func registerProjects(r fiber.Router) {
 		return c.JSON(fiber.Map{"deleted": did})
 	})
 
-	// PATCH domain (edit host/port)
+	// PATCH domain (edit subdomain / force-https)
 	auth.Patch("/:projectId/environments/:envId/services/:serviceId/domains/:domainId", func(c fiber.Ctx) error {
 		did := c.Params("domainId")
 		var sd ServiceDomain
@@ -639,31 +671,27 @@ func registerProjects(r fiber.Router) {
 			return c.Status(404).JSON(fiber.Map{"error": "domain not found"})
 		}
 		var body struct {
-			Host *string `json:"host"`
-			Port *string `json:"port"`
+			Subdomain    *string `json:"subdomain"`
+			IsForceHTTPS *bool   `json:"is_force_https"`
 		}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
 		}
-		if body.Host != nil {
-			if *body.Host == "" {
-				return c.Status(400).JSON(fiber.Map{"error": "host required"})
-			}
-			// unique check on update: same host not allowed, excluding this domain itself
+		if body.Subdomain != nil {
+			sub := strings.ToLower(strings.TrimSpace(*body.Subdomain))
 			var count int64
-			if err := db.Model(&ServiceDomain{}).Where("service_id = ? AND host = ? AND id <> ?", sd.ServiceID, *body.Host, did).Count(&count).Error; err != nil {
+			if err := db.Model(&ServiceDomain{}).
+				Where("subdomain = ? AND domain_id = ? AND id <> ?", sub, sd.DomainID, did).
+				Count(&count).Error; err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
 			if count > 0 {
-				return c.Status(409).JSON(fiber.Map{"error": "domain already exists: " + *body.Host})
+				return c.Status(409).JSON(fiber.Map{"error": "subdomain already in use for this domain: " + sub})
 			}
-			sd.Host = *body.Host
+			sd.Subdomain = sub
 		}
-		if body.Port != nil {
-			if *body.Port == "" {
-				*body.Port = "80"
-			}
-			sd.Port = *body.Port
+		if body.IsForceHTTPS != nil {
+			sd.IsForceHTTPS = *body.IsForceHTTPS
 		}
 		if err := db.Save(&sd).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})

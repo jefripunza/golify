@@ -55,7 +55,13 @@ func proxyDomainGate(c fiber.Ctx) error {
 	}
 	// Registered + has a service → reverse-proxy to the container if the
 	// service has a mapped port, otherwise serve the SPA.
-	if targets := serviceProxyTargets(host); len(targets) > 0 {
+	if targets := serviceProxyTargets(host, string(c.Protocol())); len(targets) > 0 {
+		// force-https redirect target
+		if strings.HasPrefix(targets[0], "redirect-https:") {
+			dest := strings.TrimPrefix(targets[0], "redirect-https:")
+			c.Redirect().Status(fiber.StatusMovedPermanently).To("https://" + dest + c.OriginalURL())
+			return nil
+		}
 		return proxyToBackend(c, targets)
 	}
 	return c.Next()
@@ -66,6 +72,24 @@ func proxyDomainGate(c fiber.Ctx) error {
 func plainNotice(c fiber.Ctx, msg string) error {
 	c.Set(fiber.HeaderContentType, "text/html; charset=utf-8")
 	return c.Status(fiber.StatusOK).SendString(msg)
+}
+
+// fullServiceDomainHost builds the complete hostname for a ServiceDomain:
+// <subdomain>.<domain.host>, or bare <domain.host> when subdomain is empty.
+// Returns "" when the root domain is missing.
+func fullServiceDomainHost(sd ServiceDomain) string {
+	if sd.Domain == nil {
+		var dom Domain
+		if err := db.First(&dom, "id = ?", sd.DomainID).Error; err != nil {
+			return ""
+		}
+		sd.Domain = &dom
+	}
+	host := sd.Subdomain
+	if host != "" {
+		host += "."
+	}
+	return host + sd.Domain.Host
 }
 
 // checkDomainRegistration resolves a request hostname against the domains
@@ -98,10 +122,11 @@ func checkDomainRegistration(host string) int {
 			db.Model(&Domain{}).Where("host IN ?", candidates).
 				Where("environment_id IS NOT NULL").Select("environment_id"),
 		).Count(&svc).Error; err != nil || svc == 0 {
-		// fallback: service_domains (host attached straight to a service)
-		if err := db.Model(&Service{}).
-			Joins("JOIN service_domains sd ON sd.service_id = services.id").
-			Where("sd.host IN ?", candidates).
+		// fallback: service_domains (subdomain mapped on a registered root
+		// domain). Build the full host from subdomain + domain.host and match.
+		if err := db.Model(&ServiceDomain{}).
+			Joins("JOIN domains d ON d.id = service_domains.domain_id").
+			Where("CASE WHEN service_domains.subdomain = '' THEN d.host = ? ELSE CONCAT(service_domains.subdomain, '.', d.host) = ? END", host, host).
 			Count(&svc).Error; err != nil || svc == 0 {
 			return 0
 		}
@@ -112,7 +137,7 @@ func checkDomainRegistration(host string) int {
 // serviceProxyTarget resolves the container backend for a request hostname.
 // With replicas it returns a list of upstreams (all running replicas) so the
 // proxy can load-balance; single replica keeps the old single-target path.
-func serviceProxyTargets(host string) []string {
+func serviceProxyTargets(host, scheme string) []string {
 	candidates := []string{host}
 	parts := strings.Split(host, ".")
 	if len(parts) >= 3 {
@@ -120,8 +145,17 @@ func serviceProxyTargets(host string) []string {
 	}
 	log.Printf("[proxy] serviceProxyTargets host=%s candidates=%v", host, candidates)
 	var sd ServiceDomain
-	if err := db.Where("host IN ?", candidates).First(&sd).Error; err != nil {
+	// match subdomain+root-domain combo: build the full host and compare.
+	// (SQLite CONCAT/CASE — cross-check with the registered root domains.)
+	if err := db.Preload("Domain").
+		Joins("JOIN domains d ON d.id = service_domains.domain_id").
+		Where("CASE WHEN service_domains.subdomain = '' THEN d.host IN ? ELSE CONCAT(service_domains.subdomain, '.', d.host) IN ? END", candidates, candidates).
+		First(&sd).Error; err != nil {
 		return nil
+	}
+	// force HTTPS: the request must be secure, otherwise redirect.
+	if sd.IsForceHTTPS && scheme != "https" {
+		return []string{"redirect-https:" + fullServiceDomainHost(sd)}
 	}
 	var svc Service
 	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
@@ -311,10 +345,15 @@ func proxyToBackend(c fiber.Ctx, targets []string) error {
 	host = strings.TrimPrefix(strings.TrimSuffix(host, "."), "www.")
 	strategy := "round_robin"
 	var svc Service
-	if err := db.Where("id = (?)",
-		db.Model(&ServiceDomain{}).Where("host IN ?", []string{host}).Select("service_id"),
-	).First(&svc).Error; err == nil && svc.LoadBalancer != "" {
-		strategy = svc.LoadBalancer
+	// resolve the service through the new subdomain+domain schema
+	var sd ServiceDomain
+	if err := db.Preload("Domain").
+		Joins("JOIN domains d ON d.id = service_domains.domain_id").
+		Where("CASE WHEN service_domains.subdomain = '' THEN d.host = ? ELSE CONCAT(service_domains.subdomain, '.', d.host) = ? END", host, host).
+		First(&sd).Error; err == nil {
+		if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err == nil && svc.LoadBalancer != "" {
+			strategy = svc.LoadBalancer
+		}
 	}
 	target := pickUpstream(string(svc.ID), strategy, targets)
 	if target == "" {

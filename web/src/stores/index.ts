@@ -154,7 +154,14 @@ function mapSvc(s: any): Service {
     cpu: s.cpu,
     memory: s.memory,
     ports: s.ports ?? [],
-    domains: (s.domains ?? []).map((d: any) => ({ id: String(d.id), host: d.host, port: d.port })),
+    domains: (s.domains ?? []).map((d: any) => ({
+      id: String(d.id),
+      subdomain: d.subdomain ?? '',
+      domainId: String(d.domain_id ?? ''),
+      domain: d.domain ? { id: String(d.domain.id), host: d.domain.host } : undefined,
+      isForceHTTPS: !!d.is_force_https,
+      host: d.host ?? '',
+    })),
     networks: (s.networks ?? []).map((n: any) => ({ id: String(n.id), hostPort: n.host_port, containerPort: n.container_port })),
     updatedAt: s.updated_at,
   }
@@ -289,9 +296,9 @@ export const useProjectsStore = defineStore('projects', () => {
     return res
   }
 
-  async function addServiceDomain(projectId: string, envId: string, serviceId: string, host: string, port: string) {
+  async function addServiceDomain(projectId: string, envId: string, serviceId: string, input: { domain_id: string; subdomain: string; is_force_https?: boolean }) {
     const created = await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains`, {
-      json: { host, port },
+      json: input,
     }).json<any>()
     // re-fetch so the list reflects exactly what the DB has (fast + consistent)
     await fetchOnce()
@@ -303,7 +310,7 @@ export const useProjectsStore = defineStore('projects', () => {
     await fetchOnce()
   }
 
-  async function updateServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string, patch: { host: string; port: string }) {
+  async function updateServiceDomain(projectId: string, envId: string, serviceId: string, domainId: string, patch: { subdomain?: string; is_force_https?: boolean }) {
     const updated = await authed().patch(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/domains/${domainId}`, {
       json: patch,
     }).json<any>()
@@ -354,11 +361,11 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   // ─── Root domains (for the subdomain dropdown) ──────────────────────────
-  const rootDomains = ref<string[]>([])
+  const rootDomains = ref<{ id: string; host: string }[]>([])
   async function fetchRootDomains() {
     try {
       const rows = await authed().get('api/v1/domains').json<any[]>()
-      rootDomains.value = (rows ?? []).map((d: any) => String(d.host))
+      rootDomains.value = (rows ?? []).map((d: any) => ({ id: String(d.id), host: String(d.host) }))
     } catch {
       rootDomains.value = []
     }

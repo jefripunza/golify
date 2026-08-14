@@ -154,18 +154,25 @@ func k8sApplyIngress(svc Service) error {
 	var b strings.Builder
 	b.WriteString("apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n")
 	fmt.Fprintf(&b, "  name: %s\n  namespace: %s\n", name, ns)
-	b.WriteString("  annotations:\n    nginx.ingress.kubernetes.io/rewrite-target: /\n")
+	// force-https for any domain that requires it → nginx annotation redirect
+	var forceHTTPS []string
+	for _, d := range domains {
+		if d.IsForceHTTPS {
+			forceHTTPS = append(forceHTTPS, fullServiceDomainHost(d))
+		}
+	}
+	if len(forceHTTPS) > 0 {
+		fmt.Fprintf(&b, "  annotations:\n    nginx.ingress.kubernetes.io/force-ssl-redirect: \"true\"\n    nginx.ingress.kubernetes.io/ssl-redirect: \"true\"\n")
+	} else {
+		b.WriteString("  annotations:\n    nginx.ingress.kubernetes.io/rewrite-target: /\n")
+	}
 	b.WriteString("spec:\n  ingressClassName: nginx\n  rules:\n")
 	for _, d := range domains {
-		host := strings.TrimSpace(d.Host)
+		host := strings.TrimSpace(fullServiceDomainHost(d))
 		if host == "" {
 			continue
 		}
-		port := d.Port
-		if port == "" {
-			port = "80"
-		}
-		fmt.Fprintf(&b, "  - host: %s\n    http:\n      paths:\n      - path: /\n        pathType: Prefix\n        backend:\n          service:\n            name: %s\n            port:\n              number: %s\n", host, name, port)
+		fmt.Fprintf(&b, "  - host: %s\n    http:\n      paths:\n      - path: /\n        pathType: Prefix\n        backend:\n          service:\n            name: %s\n            port:\n              number: 80\n", host, name)
 	}
 	cmd := exec.Command("kubectl", "apply", "--namespace", ns, "-f", "-")
 	cmd.Env = k8sEnv()
