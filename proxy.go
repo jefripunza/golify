@@ -316,7 +316,15 @@ func proxyToBackendK8s(c fiber.Ctx, target, host string) error {
 		}
 		req.Header.Set(key, string(v))
 	})
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+		// Never follow redirects — mirror them to the caller so the browser
+		// sees the 308/301 and follows it itself. Following would re-request
+		// https:// against the HTTP ingress port and produce 403/loop.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).SendString("proxy error: " + err.Error())

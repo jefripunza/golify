@@ -154,18 +154,12 @@ func k8sApplyIngress(svc Service) error {
 	var b strings.Builder
 	b.WriteString("apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n")
 	fmt.Fprintf(&b, "  name: %s\n  namespace: %s\n", name, ns)
-	// force-https for any domain that requires it → nginx annotation redirect
-	var forceHTTPS []string
-	for _, d := range domains {
-		if d.IsForceHTTPS {
-			forceHTTPS = append(forceHTTPS, fullServiceDomainHost(d))
-		}
-	}
-	if len(forceHTTPS) > 0 {
-		fmt.Fprintf(&b, "  annotations:\n    nginx.ingress.kubernetes.io/force-ssl-redirect: \"true\"\n    nginx.ingress.kubernetes.io/ssl-redirect: \"true\"\n")
-	} else {
-		b.WriteString("  annotations:\n    nginx.ingress.kubernetes.io/rewrite-target: /\n")
-	}
+	// TLS is terminated by the Cloudflare tunnel / proxy layer, which also
+	// handles force-https redirects (serviceProxyTargets → redirect-https:).
+	// Adding nginx ssl-redirect annotations here would make the Ingress
+	// redirect to https:// even for already-secure requests (loop behind
+	// the tunnel) — so we keep the Ingress as a pure router.
+	b.WriteString("  annotations:\n    nginx.ingress.kubernetes.io/rewrite-target: /\n")
 	b.WriteString("spec:\n  ingressClassName: nginx\n  rules:\n")
 	for _, d := range domains {
 		host := strings.TrimSpace(fullServiceDomainHost(d))
