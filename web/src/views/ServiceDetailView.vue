@@ -908,13 +908,13 @@ const sectionIcons: Record<string, string> = {
         <FolderTree class="inline size-3" /> {{ project.name }}
       </RouterLink>
       <span>/</span>
-      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="hover:text-foreground">
+      <RouterLink :to="`/project/${project.id}/environments?envs=1`" class="hover:text-foreground">
         <Layers class="inline size-3" /> {{ env.name }}
       </RouterLink>
       <span>/</span>
-      <span class="flex items-center gap-1 truncate">
+      <RouterLink :to="`/project/${project.id}/environment/${env.id}/services`" class="flex items-center gap-1 truncate hover:text-foreground">
         <Box class="inline size-3 shrink-0" /> <span class="truncate">{{ service.name }}</span>
-      </span>
+      </RouterLink>
     </div>
 
     <!-- Header: title + status + actions -->

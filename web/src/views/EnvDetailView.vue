@@ -91,7 +91,7 @@ async function handleCreateService(input: { name: string; type: 'application' | 
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
       <RouterLink to="/projects" class="hover:text-foreground">{{ project.name }}</RouterLink>
       <span>/</span>
-      <RouterLink :to="`/project/${project.id}/environments?envs=1`" class="hover:text-foreground">{{ env.name }}</RouterLink>
+      <span>{{ env.name }}</span>
     </div>
 
     <header>

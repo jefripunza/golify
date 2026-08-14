@@ -123,8 +123,6 @@ function statusColor(s: string) {
   <div v-else class="grid gap-4">
     <div class="flex items-center gap-2 text-xs text-muted-foreground">
       <RouterLink to="/projects" class="hover:text-foreground">{{ project.name }}</RouterLink>
-      <span>/</span>
-      <span>environments</span>
     </div>
 
     <div class="flex items-center justify-between gap-2">
