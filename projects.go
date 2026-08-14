@@ -73,6 +73,18 @@ func registerProjects(r fiber.Router) {
 						"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 						"ports": s.Ports, "created_at": s.CreatedAt,
 						"updated_at": s.UpdatedAt,
+						"pod_ips": func() []string {
+							if s.LoadBalancer != "k8s" {
+								return nil
+							}
+							var ips []string
+							for _, p := range k8sPods(s) {
+								if ip, _ := p["ip"].(string); ip != "" {
+									ips = append(ips, ip)
+								}
+							}
+							return ips
+						}(),
 						"domains": func() []fiber.Map {
 							ds := make([]fiber.Map, 0, len(s.Domains))
 							for _, d := range s.Domains {
@@ -206,6 +218,18 @@ func registerProjects(r fiber.Router) {
 					"load_balancer":     s.LoadBalancer,
 					"status":            s.Status, "cpu": s.CPU, "memory": s.Memory,
 					"ports": s.Ports, "created_at": s.CreatedAt, "updated_at": s.UpdatedAt,
+					"pod_ips": func() []string {
+						if s.LoadBalancer != "k8s" {
+							return nil
+						}
+						var ips []string
+						for _, p := range k8sPods(s) {
+							if ip, _ := p["ip"].(string); ip != "" {
+								ips = append(ips, ip)
+							}
+						}
+						return ips
+					}(),
 					"domains": func() []fiber.Map {
 						ds := make([]fiber.Map, 0, len(s.Domains))
 						for _, d := range s.Domains {

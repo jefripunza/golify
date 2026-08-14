@@ -246,6 +246,7 @@ func k8sPods(svc Service) []fiber.Map {
 			} `json:"metadata"`
 			Status struct {
 				Phase string `json:"phase"`
+				PodIP string `json:"podIP"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -270,6 +271,7 @@ func k8sPods(svc Service) []fiber.Map {
 			"replica_id": rid,
 			"status":     status,
 			"running":    running,
+			"ip":         p.Status.PodIP,
 			"ports":      "",
 		})
 	}

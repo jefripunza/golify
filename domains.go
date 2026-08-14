@@ -99,7 +99,16 @@ func registerDomains(r fiber.Router) {
 		if err := db.Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.JSON(rows)
+		// usage = how many services currently use this root domain
+		out := make([]fiber.Map, 0, len(rows))
+		for _, d := range rows {
+			var n int64
+			db.Model(&ServiceDomain{}).Where("domain_id = ?", d.ID).Count(&n)
+			out = append(out, fiber.Map{
+				"id": d.ID, "host": d.Host, "created_at": d.CreatedAt, "usage": n,
+			})
+		}
+		return c.JSON(out)
 	})
 
 	// create

@@ -65,6 +65,7 @@ export interface Service {
   cpu: number // %
   memory: number // MB
   ports: string[]
+  podIps?: string[]
   domains?: ServiceDomain[]
   networks?: ServiceNetwork[]
   updatedAt: string // ISO

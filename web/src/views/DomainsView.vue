@@ -18,6 +18,7 @@ interface DomainEntry {
   id: string
   host: string
   created_at: string
+  usage?: number
 }
 
 const items = ref<DomainEntry[]>([])
@@ -154,6 +155,7 @@ onMounted(load)
             <tr>
               <th class="px-4 py-2">Domain</th>
               <th class="px-4 py-2">Added</th>
+              <th class="px-4 py-2">Usage</th>
               <th class="px-4 py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -165,6 +167,9 @@ onMounted(load)
               </td>
               <td class="px-4 py-2 text-xs text-muted-foreground">
                 {{ d.created_at ? d.created_at.slice(0, 16).replace('T', ' ') : '—' }}
+              </td>
+              <td class="px-4 py-2">
+                <Badge variant="secondary">{{ d.usage ?? 0 }}</Badge>
               </td>
               <td class="px-4 py-2 text-right">
                 <Button variant="ghost" size="sm" type="button" @click="openEdit(d)">

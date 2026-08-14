@@ -153,6 +153,7 @@ function mapSvc(s: any): Service {
     status: s.status ?? 'stopped',
     cpu: s.cpu,
     memory: s.memory,
+    podIps: s.pod_ips ?? [],
     ports: s.ports ?? [],
     domains: (s.domains ?? []).map((d: any) => ({
       id: String(d.id),

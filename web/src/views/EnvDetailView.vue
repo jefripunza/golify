@@ -131,7 +131,7 @@ async function handleCreateService(input: { name: string; type: 'application' | 
             </CardDescription>
           </CardHeader>
           <CardContent class="flex items-center justify-between text-xs text-muted-foreground">
-            <span>CPU {{ svc.cpu }}% · {{ svc.memory }} MB</span>
+            <span class="font-mono">{{ (svc.podIps ?? [])[0] || '—' }} · {{ svc.replicas ?? 1 }} replica(s)</span>
             <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" @click.stop="requestDeleteService(svc)">
               <Trash2 class="size-3" />
             </Button>
