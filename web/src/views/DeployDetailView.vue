@@ -138,7 +138,7 @@ onBeforeUnmount(() => ws?.close())
         <span>/</span>
         <RouterLink :to="`/project/${projectId}/environment/${envId}/services`" class="hover:text-foreground">{{ service?.name ?? 'service' }}</RouterLink>
         <span>/</span>
-        <span class="text-foreground">deploy {{ deployId.slice(0, 8) }}</span>
+        <RouterLink :to="`/project/${projectId}/environment/${envId}/service/${serviceId}`" class="text-foreground hover:text-primary">{{ 'deploy ' + deployId.slice(0, 8) }}</RouterLink>
       </div>
     </div>
 
