@@ -56,6 +56,7 @@ export interface Service {
   replicas?: number
   replicasMin?: number
   replicasMax?: number
+  loadBalancer?: 'round_robin' | 'least_conn'
   status: ServiceStatus
   cpu: number // %
   memory: number // MB

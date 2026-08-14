@@ -52,6 +52,13 @@ const project = computed(() => store.get(projectId.value))
 const env = computed(() => store.getEnv(projectId.value, envId.value))
 const service = computed<Service | null>(() => store.getService(projectId.value, envId.value, serviceId.value) ?? null)
 
+// Load Balancer dropdown is only meaningful with more than one replica.
+const lbCount = computed(() => {
+  const n = form.replicasMode === 'range' ? Number(form.replicasMin) || 1 : Number(form.replicas) || 1
+  return n
+})
+const lbVisible = computed(() => lbCount.value > 1)
+
 // ─── Left sidebar sections (Coolify-style) ────────────────────────────────
 const sections = [
   { id: 'general', label: 'General', icon: 'settings' },
@@ -103,6 +110,7 @@ const form = reactive({
   replicas: '1',
   replicasMin: '1',
   replicasMax: '1',
+  loadBalancer: 'round_robin' as 'round_robin' | 'least_conn',
 })
 const saving = ref(false)
 const saveError = ref('')
@@ -138,6 +146,7 @@ function initForm() {
   form.replicas = String(s.replicas ?? 1)
   form.replicasMin = String(s.replicasMin ?? 1)
   form.replicasMax = String(s.replicasMax ?? 1)
+  form.loadBalancer = (s.loadBalancer === 'least_conn' ? 'least_conn' : 'round_robin')
 }
 watch(() => service.value?.id, () => { if (service.value) initForm() }, { immediate: true })
 
@@ -173,6 +182,7 @@ async function saveGeneral() {
       replicas: newReplicas,
       replicas_min: Number(form.replicasMin) || 1,
       replicas_max: Number(form.replicasMax) || 1,
+      load_balancer: form.loadBalancer,
     })
     saveOk.value = true
     setTimeout(() => (saveOk.value = false), 2500)
@@ -1233,6 +1243,18 @@ const sectionIcons: Record<string, string> = {
                     </div>
                   </div>
                 </template>
+                <!-- Load Balancer — only meaningful with more than one replica -->
+                <div v-if="lbVisible" class="grid gap-1.5">
+                  <Label class="flex items-center gap-1">Load Balancer <Info class="size-3 text-muted-foreground" /></Label>
+                  <select
+                    v-model="form.loadBalancer"
+                    class="h-9 w-full rounded-md border bg-background px-2.5 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-input/30"
+                  >
+                    <option value="round_robin">Round Robin</option>
+                    <option value="least_conn">Least Connection</option>
+                  </select>
+                  <p class="text-xs text-muted-foreground">Distribution strategy across {{ lbCount }} replicas.</p>
+                </div>
               </CardContent>
             </Card>
           </div>

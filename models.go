@@ -97,6 +97,8 @@ type Service struct {
 	Replicas     int              `gorm:"default:1" json:"replicas"`
 	ReplicasMin  int              `gorm:"default:1" json:"replicas_min"`
 	ReplicasMax  int              `gorm:"default:1" json:"replicas_max"`
+	// Load balancing strategy across replicas (round_robin | least_conn)
+	LoadBalancer string `gorm:"size:32;default:'round_robin'" json:"load_balancer"`
 	Status       string           `gorm:"size:32;not null;default:'stopped'" json:"status"`
 	CPU          float64          `gorm:"default:0" json:"cpu"`
 	Memory       int64            `gorm:"default:0" json:"memory"` // MB

@@ -2,7 +2,10 @@ package main
 
 import (
 	"log"
+	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
@@ -47,8 +50,8 @@ func proxyDomainGate(c fiber.Ctx) error {
 	}
 	// Registered + has a service → reverse-proxy to the container if the
 	// service has a mapped port, otherwise serve the SPA.
-	if target := serviceProxyTarget(host); target != "" {
-		return proxyToBackend(c, target)
+	if targets := serviceProxyTargets(host); len(targets) > 0 {
+		return proxyToBackend(c, targets)
 	}
 	return c.Next()
 }
@@ -102,42 +105,170 @@ func checkDomainRegistration(host string) int {
 }
 
 // serviceProxyTarget resolves the container backend for a request hostname.
-// It looks up the service_domains row for the host, takes the service's
-// mapped host port (ports[0] "hostport:80" or its networks), and returns
-// "127.0.0.1:<port>" — empty when the service has no mapped port yet.
-func serviceProxyTarget(host string) string {
+// With replicas it returns a list of upstreams (all running replicas) so the
+// proxy can load-balance; single replica keeps the old single-target path.
+func serviceProxyTargets(host string) []string {
 	candidates := []string{host}
 	parts := strings.Split(host, ".")
 	if len(parts) >= 3 {
 		candidates = append(candidates, strings.Join(parts[len(parts)-2:], "."))
 	}
-	log.Printf("[proxy] serviceProxyTarget host=%s candidates=%v", host, candidates)
+	log.Printf("[proxy] serviceProxyTargets host=%s candidates=%v", host, candidates)
 	var sd ServiceDomain
 	if err := db.Where("host IN ?", candidates).First(&sd).Error; err != nil {
-		return ""
+		return nil
 	}
 	var svc Service
 	if err := db.First(&svc, "id = ?", sd.ServiceID).Error; err != nil {
-		return ""
+		return nil
 	}
 	// prefer networks host_port (explicit mapping), else ports[0] host part
+	basePort := ""
 	for _, n := range svc.Networks {
 		if n.HostPort != "" {
-			return "127.0.0.1:" + n.HostPort
+			basePort = n.HostPort
+			break
 		}
 	}
-	if len(svc.Ports) > 0 {
-		hp := strings.Split(svc.Ports[0], ":")[0]
-		if hp != "" {
-			return "127.0.0.1:" + hp
+	if basePort == "" && len(svc.Ports) > 0 {
+		basePort = strings.Split(svc.Ports[0], ":")[0]
+	}
+	if basePort == "" {
+		return nil
+	}
+	// Single replica → exactly one upstream (legacy behaviour).
+	if svc.Replicas <= 1 {
+		return []string{"127.0.0.1:" + basePort}
+	}
+	// Multi-replica → resolve every running container of this service.
+	// Containers are named golify-<name> (replica 1) and golify-<name>-N.
+	base := "golify-" + strings.ToLower(strings.ReplaceAll(svc.Name, " ", "-"))
+	out, err := exec.Command("podman", "ps", "--filter", "name="+base,
+		"--format", "{{.Names}}	{{.Ports}}").CombinedOutput()
+	if err != nil {
+		log.Printf("[proxy] list replicas failed: %v", err)
+		return []string{"127.0.0.1:" + basePort}
+	}
+	var targets []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "	")
+		if len(fields) < 2 {
+			continue
+		}
+		ports := fields[1]
+		// ports format: "127.0.0.1:32701->80/tcp, 127.0.0.1:32702->80/tcp"
+		for _, p := range strings.Split(ports, ",") {
+			p = strings.TrimSpace(p)
+			hostport := strings.Split(p, "->")[0]
+			hostport = strings.TrimPrefix(hostport, "127.0.0.1:")
+			hostport = strings.TrimSuffix(hostport, "/tcp")
+			if hostport != "" && !strings.Contains(hostport, ":") {
+				targets = append(targets, "127.0.0.1:"+hostport)
+				break
+			}
 		}
 	}
-	return ""
+	if len(targets) == 0 {
+		return []string{"127.0.0.1:" + basePort}
+	}
+	return targets
+}
+
+// ─── Load balancer state ───────────────────────────────────────────────────
+// round-robin counters per service ID (atomic), plus active-connection
+// counters per upstream for the least-connection strategy.
+var (
+	lbRRCounters   = map[string]*atomic.Uint64{}
+	lbConnCounters = map[string]*atomic.Int64{} // key: serviceID|upstream
+	lbMu           sync.Mutex
+)
+
+func lbCounter(key string) *atomic.Uint64 {
+	lbMu.Lock()
+	defer lbMu.Unlock()
+	c, ok := lbRRCounters[key]
+	if !ok {
+		c = &atomic.Uint64{}
+		lbRRCounters[key] = c
+	}
+	return c
+}
+
+func lbConnCounter(key string) *atomic.Int64 {
+	lbMu.Lock()
+	defer lbMu.Unlock()
+	c, ok := lbConnCounters[key]
+	if !ok {
+		c = &atomic.Int64{}
+		lbConnCounters[key] = c
+	}
+	return c
+}
+
+// pickUpstream selects one target from the replica list based on the
+// service's load-balancer strategy (round_robin default, least_conn).
+func pickUpstream(serviceID, strategy string, targets []string) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	if len(targets) == 1 {
+		return targets[0]
+	}
+	switch strategy {
+	case "least_conn":
+		// pick the upstream with the fewest active connections (tie → first)
+		best := targets[0]
+		bestN := lbConnCounter(serviceID + "|" + best).Load()
+		for _, t := range targets[1:] {
+			n := lbConnCounter(serviceID + "|" + t).Load()
+			if n < bestN {
+				best, bestN = t, n
+			}
+		}
+		lbConnCounter(serviceID + "|" + best).Add(1)
+		return best
+	default: // round_robin
+		n := lbCounter(serviceID).Add(1)
+		return targets[(int(n)-1)%len(targets)]
+	}
 }
 
 // proxyToBackend forwards the request to an upstream (127.0.0.1:<port>)
-// using fasthttp's client and mirrors the response back.
-func proxyToBackend(c fiber.Ctx, target string) error {
+// using fasthttp's client and mirrors the response back. With multiple
+// replicas the upstream is chosen by the service's LB strategy.
+func proxyToBackend(c fiber.Ctx, targets []string) error {
+	if len(targets) == 0 {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: no upstream")
+	}
+	// resolve the strategy for this service from the request host
+	host := strings.ToLower(c.Hostname())
+	if i := strings.LastIndex(host, ":"); i > 0 && !strings.Contains(host[i:], "]") {
+		host = host[:i]
+	}
+	host = strings.TrimPrefix(strings.TrimSuffix(host, "."), "www.")
+	strategy := "round_robin"
+	var svc Service
+	if err := db.Where("id = (?)",
+		db.Model(&ServiceDomain{}).Where("host IN ?", []string{host}).Select("service_id"),
+	).First(&svc).Error; err == nil && svc.LoadBalancer != "" {
+		strategy = svc.LoadBalancer
+	}
+	target := pickUpstream(string(svc.ID), strategy, targets)
+	if target == "" {
+		return c.Status(fiber.StatusBadGateway).SendString("proxy error: no upstream")
+	}
+
+	// count active connection for least_conn
+	connKey := string(svc.ID) + "|" + target
+	if strategy == "least_conn" {
+		lbConnCounter(connKey).Add(1)
+		defer lbConnCounter(connKey).Add(-1)
+	}
+
 	upstream := "http://" + target
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)

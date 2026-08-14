@@ -484,7 +484,8 @@ func registerProjects(r fiber.Router) {
 			Replicas        *int      `json:"replicas"`
 			ReplicasMin     *int      `json:"replicas_min"`
 			ReplicasMax     *int      `json:"replicas_max"`
-		}
+			LoadBalancer    *string   `json:"load_balancer"`
+			}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
 		}
@@ -535,6 +536,9 @@ func registerProjects(r fiber.Router) {
 		}
 		if body.ReplicasMax != nil && *body.ReplicasMax >= *body.ReplicasMin {
 			svc.ReplicasMax = *body.ReplicasMax
+		}
+		if body.LoadBalancer != nil && (*body.LoadBalancer == "round_robin" || *body.LoadBalancer == "least_conn") {
+			svc.LoadBalancer = *body.LoadBalancer
 		}
 		if err := db.Save(&svc).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
