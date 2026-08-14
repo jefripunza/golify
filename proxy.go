@@ -55,7 +55,13 @@ func proxyDomainGate(c fiber.Ctx) error {
 	}
 	// Registered + has a service → reverse-proxy to the container if the
 	// service has a mapped port, otherwise serve the SPA.
-	if targets := serviceProxyTargets(host, string(c.Protocol())); len(targets) > 0 {
+	// Effective scheme: trust X-Forwarded-Proto (set by Cloudflare tunnel /
+	// TLS-terminating proxies). Direct connections fall back to c.Protocol().
+	scheme := string(c.Protocol())
+	if fwd := c.Get("X-Forwarded-Proto"); fwd == "https" || fwd == "http" {
+		scheme = fwd
+	}
+	if targets := serviceProxyTargets(host, scheme); len(targets) > 0 {
 		// force-https redirect target
 		if strings.HasPrefix(targets[0], "redirect-https:") {
 			dest := strings.TrimPrefix(targets[0], "redirect-https:")
