@@ -1086,6 +1086,8 @@ func setServiceStatus(c fiber.Ctx, status string) error {
 		if err := db.Save(&s).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		// broadcast status change so all open dashboards update instantly
+		notify("service", "updated", s.ID)
 		return c.JSON(fiber.Map{"service": s, "runtime": "k8s"})
 	}
 
@@ -1107,6 +1109,8 @@ func setServiceStatus(c fiber.Ctx, status string) error {
 	if err := db.Save(&s).Error; err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	// broadcast status change so all open dashboards update instantly
+	notify("service", "updated", s.ID)
 	return c.JSON(fiber.Map{"service": s, "runtime": "podman-or-docker"})
 }
 

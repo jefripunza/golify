@@ -388,16 +388,38 @@ export const useProjectsStore = defineStore('projects', () => {
   function getService(projectId: string, envId: string, serviceId: string): Service | undefined {
     return getEnv(projectId, envId)?.services.find((s) => s.id === serviceId)
   }
-  function start(projectId: string, envId: string, serviceId: string) {
+  async function start(projectId: string, envId: string, serviceId: string) {
     const s = getService(projectId, envId, serviceId)
     if (s) s.status = 'building'
+    try {
+      await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/start`)
+      // status change broadcast via /ws/realtime → refresh() updates real status
+    } catch (e: any) {
+      console.error('start failed:', e)
+      throw e
+    }
   }
-  function stop(projectId: string, envId: string, serviceId: string) {
+  async function stop(projectId: string, envId: string, serviceId: string) {
     const s = getService(projectId, envId, serviceId)
-    if (s) s.status = 'stopped'
+    if (s) s.status = 'stopping'
+    try {
+      await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/stop`)
+      // status change broadcast via /ws/realtime → refresh() updates real status
+    } catch (e: any) {
+      console.error('stop failed:', e)
+      throw e
+    }
+  }
+  async function restart(projectId: string, envId: string, serviceId: string) {
+    try {
+      await authed().post(`api/v1/projects/${projectId}/environments/${envId}/services/${serviceId}/restart`)
+    } catch (e: any) {
+      console.error('restart failed:', e)
+      throw e
+    }
   }
 
-  return { projects, pending, error, get, getEnv, getService, start, stop, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, fetchDeployments, fetchDeployment, createDeployment, rootDomains, fetchRootDomains, refresh: fetchOnce }
+  return { projects, pending, error, get, getEnv, getService, start, stop, restart, create, update, remove, removeEnv, createEnv, updateEnv, createService, removeService, updateService, addServiceDomain, updateServiceDomain, removeServiceDomain, addServiceNetwork, updateServiceNetwork, removeServiceNetwork, fetchDeployments, fetchDeployment, createDeployment, rootDomains, fetchRootDomains, refresh: fetchOnce }
 })
 
 // ─── Servers ───────────────────────────────────────────────────────────────

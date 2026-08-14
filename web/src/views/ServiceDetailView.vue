@@ -645,18 +645,21 @@ function statusVariant(s?: string) {
 }
 const showStopConfirm = ref(false)
 const stopping = ref(false)
+const stopError = ref('')
 async function confirmStop() {
+  stopError.value = ''
   // open the custom confirmation dialog instead of a native confirm
   showStopConfirm.value = true
 }
 async function doStop() {
   if (!service.value) return
   stopping.value = true
+  stopError.value = ''
   try {
     await store.stop(projectId.value, envId.value, serviceId.value)
     showStopConfirm.value = false
   } catch (e: any) {
-    console.error('stop failed:', e)
+    stopError.value = e?.message || 'Gagal menghentikan service'
   } finally {
     stopping.value = false
   }
@@ -664,12 +667,9 @@ async function doStop() {
 
 function action(a: 'start' | 'stop' | 'restart') {
   if (!service.value) return
-  if (a === 'start') store.start(projectId.value, envId.value, serviceId.value)
-  if (a === 'stop') store.stop(projectId.value, envId.value, serviceId.value)
-  if (a === 'restart') {
-    store.stop(projectId.value, envId.value, serviceId.value)
-    setTimeout(() => store.start(projectId.value, envId.value, serviceId.value), 400)
-  }
+  if (a === 'start') void store.start(projectId.value, envId.value, serviceId.value)
+  if (a === 'stop') void store.stop(projectId.value, envId.value, serviceId.value)
+  if (a === 'restart') void store.restart(projectId.value, envId.value, serviceId.value)
 }
 
 // ─── Terminal (accordion per replica/container, one xterm per accordion) ──
@@ -1210,6 +1210,7 @@ const sectionIcons: Record<string, string> = {
             {{ stopping ? 'Menghentikan…' : 'Ya, Stop' }}
           </Button>
         </DialogFooter>
+        <p v-if="stopError" class="text-sm text-destructive">{{ stopError }}</p>
       </DialogContent>
     </Dialog>
 
