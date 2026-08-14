@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -396,12 +396,22 @@ interface TermSlot {
 }
 const termSlots = new Map<string, TermSlot>()
 
-function initTerminalFor(c: LogContainer) {
+function initTerminalFor(c: LogContainer, _attempt = 0) {
   const el = document.getElementById(`term-${c.id}`)
-  if (!el) return
-  const existing = termSlots.get(c.id)
-  if (existing?.term) {
-    existing.fit?.fit()
+  if (!el) {
+    // v-if render may lag behind the toggle — retry briefly
+    if (_attempt < 10) {
+      setTimeout(() => initTerminalFor(c, _attempt + 1), 50)
+    }
+    return
+  }
+  // Idempotence guard: if a live slot already exists (e.g. watch(activeTab)
+  // races with toggleTerminal's nextTick init), keep it — never dispose a
+  // working terminal here. Collapse is the ONLY path that disposes.
+  const live = termSlots.get(c.id)
+  if (live?.term && !live.term.isDisposed) {
+    live.fit?.fit()
+    if (!live.ws && c.running) attachTerminalWS(c, live)
     return
   }
   const term = new Terminal({
@@ -417,13 +427,27 @@ function initTerminalFor(c: LogContainer) {
   const fit = new FitAddon()
   term.loadAddon(fit)
   term.open(el)
-  fit.fit()
+  // fit once the accordion body is actually laid out (v-if just rendered)
+  requestAnimationFrame(() => {
+    try { fit.fit() } catch { /* noop */ }
+  })
   const slot: TermSlot = { term, fit, ws: null }
   termSlots.set(c.id, slot)
+  attachTerminalWS(c, slot)
+}
 
+// open the per-replica terminal WS and wire it to the slot's xterm
+function attachTerminalWS(c: LogContainer, slot: TermSlot) {
+  const { term } = slot
   if (!c.running) {
-    term.writeln('\x1b[33mContainer stopped — start it to open a terminal.\x1b[0m')
+    term?.writeln('\x1b[33mContainer stopped — start it to open a terminal.\x1b[0m')
     return
+  }
+  // A WS stuck in CONNECTING/CLOSING/CLOSED is dead — drop it and reconnect.
+  if (slot.ws) {
+    if (slot.ws.readyState === WebSocket.OPEN) return // already live
+    try { slot.ws.close() } catch { /* noop */ }
+    slot.ws = null
   }
   const auth = getAuth()
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -432,17 +456,21 @@ function initTerminalFor(c: LogContainer) {
   try { slot.ws = new WebSocket(url) } catch { slot.ws = null }
   if (slot.ws) {
     slot.ws.onopen = () => {
-      term.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
-      term.writeln(`connected to replica: ${c.replicaId || c.name} via WS`)
-      term.writeln('')
+      // re-fit — the div may have been 0-sized when first mounted (v-if)
+      setTimeout(() => {
+        try { slot.fit?.fit() } catch { /* noop */ }
+      }, 50)
+      term?.writeln('\x1b[36m─── golify terminal ───\x1b[0m')
+      term?.writeln(`connected to replica: ${c.replicaId || c.name} via WS`)
+      term?.writeln('')
     }
-    slot.ws.onmessage = (ev) => term.write(String(ev.data))
-    slot.ws.onclose = () => term.writeln('\r\n\x1b[31m[connection closed]\x1b[0m')
-    slot.ws.onerror = () => term.writeln('\r\n\x1b[31m[websocket error]\x1b[0m')
+    slot.ws.onmessage = (ev) => term?.write(String(ev.data))
+    slot.ws.onclose = () => term?.writeln('\r\n\x1b[31m[connection closed]\x1b[0m')
+    slot.ws.onerror = () => term?.writeln('\r\n\x1b[31m[websocket error]\x1b[0m')
   } else {
-    term.writeln('\x1b[31mWS not available\x1b[0m')
+    term?.writeln('\x1b[31mWS not available\x1b[0m')
   }
-  term.onData((data) => slot.ws?.send(data))
+  term?.onData((data) => slot.ws?.send(data))
 }
 function closeTermSlot(c: LogContainer) {
   const slot = termSlots.get(c.id)
@@ -463,10 +491,20 @@ function closeAllTermSlots() {
   }
   termSlots.clear()
 }
-// expand/collapse a terminal accordion
+// expand/collapse a terminal accordion.
+// Closing = close WS + dispose xterm + drop the slot (fresh reconnect next
+// open), mirroring the Logs accordion lifecycle.
 function toggleTerminal(c: LogContainer) {
   c.expanded = !c.expanded
-  if (c.expanded) setTimeout(() => initTerminalFor(c), 50)
+  if (c.expanded) {
+    disposeTermSlot(c) // make sure any stale slot is gone
+    // wait for the v-if to render the #term-<id> div before mounting xterm
+    nextTick(() => {
+      setTimeout(() => initTerminalFor(c), 30)
+    })
+  } else {
+    disposeTermSlot(c)
+  }
 }
 watch(activeTab, (tab) => {
   if (tab === 'terminal') {
