@@ -132,11 +132,11 @@ const savingEnv = ref(false)
 const envSaved = ref(false)
 const envError = ref('')
 
-// Init env editor from service envVars (KEY=VALUE lines)
+// Init env editor from service env_var (raw .env block string)
 function initEnvEditor() {
   const s = service.value
   if (!s) return
-  envText.value = (s.envVars ?? []).map((v) => `${v.key}=${v.value}`).join('\n')
+  envText.value = s.envVar ?? ''
   envError.value = ''
   envSaved.value = false
 }
@@ -146,14 +146,40 @@ const envVarCount = computed(() => {
   const lines = envText.value.split('\n').filter((l) => l.trim() && !l.trim().startsWith('#'))
   return lines.length
 })
-const buildVarCount = computed(() => (service.value?.envVars ?? []).filter((v) => v.isBuild).length)
 
-// Parse .env text → rows
+// Parsed KEY/VALUE pairs from the env_var string (skips comments: full-line
+// and inline "# ..."), mirrors backend parseEnvVarBlock.
+const parsedEnvVars = computed(() => {
+  const rows: { key: string; value: string }[] = []
+  const seen = new Set<string>()
+  for (const line of (service.value?.envVar ?? '').split('\n')) {
+    let t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const ci = t.indexOf(' #')
+    if (ci >= 0) t = t.slice(0, ci).trim()
+    const eq = t.indexOf('=')
+    if (eq <= 0) continue
+    const key = t.slice(0, eq).trim()
+    let value = t.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || seen.has(key)) continue
+    seen.add(key)
+    rows.push({ key, value })
+  }
+  return rows
+})
+
+// Parse .env text → rows (validated) — mirrors backend parseEnvVarBlock
 function parseEnvText(): { key: string; value: string }[] {
   const rows: { key: string; value: string }[] = []
   for (const line of envText.value.split('\n')) {
-    const t = line.trim()
+    let t = line.trim()
     if (!t || t.startsWith('#')) continue
+    // strip inline comment
+    const ci = t.indexOf(' #')
+    if (ci >= 0) t = t.slice(0, ci).trim()
     const eq = t.indexOf('=')
     if (eq <= 0) continue
     const key = t.slice(0, eq).trim()
@@ -174,18 +200,14 @@ async function saveEnvText() {
   const s = service.value
   if (!s) return
   envError.value = ''
-  const rows = parseEnvText()
-  if (envError.value) return
+  if (parseEnvText().length === 0 && envText.value.trim() !== '') {
+    if (envError.value) return
+  }
   savingEnv.value = true
   try {
     const base = `/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}`
-    // Delete all existing, then recreate (simple sync strategy)
-    for (const v of s.envVars ?? []) {
-      await authed().delete(`${base}/env-vars/${v.id}`)
-    }
-    for (const r of rows) {
-      await authed().post(`${base}/env-vars`, { json: { key: r.key, value: r.value, is_build: false } })
-    }
+    // Save the whole .env block as a single string on the service.
+    await authed().patch(base, { json: { env_var: envText.value } })
     await store.fetchProjects()
     const fresh = store.getService(projectId.value, envId.value, serviceId.value)
     if (fresh) initEnvEditor()
@@ -195,18 +217,6 @@ async function saveEnvText() {
     envError.value = e?.message || 'Failed to save env vars'
   } finally {
     savingEnv.value = false
-  }
-}
-
-async function removeEnvVar(id: string) {
-  const s = service.value
-  if (!s) return
-  try {
-    await authed().delete(`/api/v1/projects/${projectId.value}/environments/${envId.value}/services/${serviceId.value}/env-vars/${id}`)
-    await store.fetchProjects()
-    initEnvEditor()
-  } catch (e: any) {
-    envError.value = e?.message || 'Failed to delete env var'
   }
 }
 
@@ -262,7 +272,8 @@ monaco.editor.defineTheme('golify-dark', {
 })
 
 function initEnvEditorMonaco() {
-  if (envEditorInitialized || !envEditorEl.value) return
+  if (envEditorInitialized) return
+  if (!envEditorEl.value) return // elemen belum render — coba lagi nanti
   envEditorInitialized = true
   envEditor = monaco.editor.create(envEditorEl.value, {
     value: envText.value,
@@ -288,15 +299,33 @@ function initEnvEditorMonaco() {
 // Lazily init when the user opens the Environment Variables section
 watch(activeSection, (s) => {
   if (s === 'envvars') {
-    nextTick(() => {
+    // retry init until the editor element is actually mounted (v-if render
+    // may lag one tick behind the watcher)
+    let tries = 0
+    const attempt = () => {
+      initEnvEditor() // re-read fresh env_var from store
       initEnvEditorMonaco()
-      // sync external changes (e.g. after save) into the editor
-      if (envEditor && envEditor.getValue() !== envText.value) {
+      if (envEditor) {
         envEditor.setValue(envText.value)
+        return
       }
-    })
+      if (++tries < 10) setTimeout(attempt, 80)
+    }
+    nextTick(attempt)
   }
 })
+
+// Keep the Monaco editor in sync whenever the service env_var changes
+// (e.g. after fetchProjects resolves and service.value is populated later
+// than the section was opened — the common race that leaves the editor empty).
+watch(
+  () => service.value?.envVar,
+  () => {
+    if (envEditor && activeSection.value === 'envvars') {
+      envEditor.setValue(service.value?.envVar ?? '')
+    }
+  },
+)
 
 onBeforeUnmount(() => {
   envEditor?.dispose()
@@ -1583,7 +1612,7 @@ const sectionIcons: Record<string, string> = {
                     <div ref="envEditorEl" class="h-80 w-full" style="min-height: 320px" />
                   </div>
                   <div class="flex items-center justify-between gap-2">
-                    <p class="text-xs text-muted-foreground">{{ envVarCount }} variable(s) · build: {{ buildVarCount }}</p>
+                    <p class="text-xs text-muted-foreground">{{ envVarCount }} variable(s) · build: 0</p>
                     <div class="flex gap-2">
                       <Button size="sm" variant="ghost" :disabled="!envText" @click="envText = ''">Clear</Button>
                       <Button size="sm" :disabled="savingEnv" @click="saveEnvText">
@@ -1595,28 +1624,19 @@ const sectionIcons: Record<string, string> = {
                   </div>
                   <p v-if="envError" class="text-xs text-destructive">{{ envError }}</p>
 
-                  <!-- Table of stored variables -->
-                  <div v-if="service.envVars?.length" class="mt-2 overflow-x-auto">
+                  <!-- Table of stored variables (parsed from env_var string) -->
+                  <div v-if="parsedEnvVars.length" class="mt-2 overflow-x-auto">
                     <table class="w-full text-sm">
                       <thead class="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
                         <tr>
                           <th class="px-3 py-2">Key</th>
                           <th class="px-3 py-2">Value</th>
-                          <th class="px-3 py-2">Build</th>
-                          <th class="px-3 py-2 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-border">
-                        <tr v-for="v in service.envVars" :key="v.id" class="hover:bg-muted/30">
+                        <tr v-for="v in parsedEnvVars" :key="v.key" class="hover:bg-muted/30">
                           <td class="px-3 py-2 font-mono text-[13px]">{{ v.key }}</td>
                           <td class="max-w-[280px] truncate px-3 py-2 font-mono text-[13px] text-muted-foreground">{{ v.value }}</td>
-                          <td class="px-3 py-2">
-                            <Badge v-if="v.isBuild" variant="secondary">Build</Badge>
-                            <span v-else class="text-xs text-muted-foreground">Runtime</span>
-                          </td>
-                          <td class="px-3 py-2 text-right">
-                            <button class="text-muted-foreground hover:text-foreground" @click="removeEnvVar(v.id)"><Trash2 class="size-3.5" /></button>
-                          </td>
                         </tr>
                       </tbody>
                     </table>

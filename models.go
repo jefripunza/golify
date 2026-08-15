@@ -17,7 +17,6 @@ func (m *Environment) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) 
 func (m *Service) BeforeCreate(tx *gorm.DB) error        { return fillID(&m.ID) }
 func (m *ServiceDomain) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
 func (m *ServiceNetwork) BeforeCreate(tx *gorm.DB) error { return fillID(&m.ID) }
-func (m *ServiceEnvironmentVariable) BeforeCreate(tx *gorm.DB) error  { return fillID(&m.ID) }
 func (m *ServicePersistentStorage) BeforeCreate(tx *gorm.DB) error    { return fillID(&m.ID) }
 func (m *Domain) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
 func (m *Server) BeforeCreate(tx *gorm.DB) error         { return fillID(&m.ID) }
@@ -94,6 +93,9 @@ type Service struct {
 	BasicAuthEnable bool     `gorm:"default:false" json:"basic_auth_enable"`
 	BasicAuthUser   string   `gorm:"size:255;default:''" json:"basic_auth_user"`
 	BasicAuthPass   string   `gorm:"size:255;default:''" json:"basic_auth_pass"`
+	// Environment variables as a raw .env-style block (KEY=VALUE per line).
+	// Stored as a single TEXT column on the service — no separate table.
+	EnvVar string `gorm:"type:text" json:"env_var"`
 	// Replicas: fix (single count) or range (min/max, autoscaling)
 	ReplicasMode string           `gorm:"size:16;default:'fix'" json:"replicas_mode"` // fix | range
 	Replicas     int              `gorm:"default:1" json:"replicas"`
@@ -107,7 +109,6 @@ type Service struct {
 	Ports        []string         `gorm:"serializer:json" json:"ports"`
 	Domains      []ServiceDomain  `gorm:"constraint:OnDelete:CASCADE" json:"domains,omitempty"`
 	Networks     []ServiceNetwork `gorm:"constraint:OnDelete:CASCADE" json:"networks,omitempty"`
-	EnvVars      []ServiceEnvironmentVariable `gorm:"constraint:OnDelete:CASCADE" json:"env_vars,omitempty"`
 	Storages     []ServicePersistentStorage   `gorm:"constraint:OnDelete:CASCADE" json:"storages,omitempty"`
 	CreatedAt    time.Time        `json:"created_at"`
 	UpdatedAt    time.Time        `json:"updated_at"`
@@ -137,18 +138,6 @@ type ServiceNetwork struct {
 	ContainerPort string    `gorm:"size:16;default:''" json:"container_port"` // e.g. 3000
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-// ServiceEnvironmentVariable is a KEY=VALUE environment variable attached to
-// a Service, rendered as .env-style editor rows in the UI.
-type ServiceEnvironmentVariable struct {
-	ID        UUID      `gorm:"primaryKey;size:36" json:"id"`
-	ServiceID UUID      `gorm:"not null;index;size:36" json:"service_id"`
-	Key       string    `gorm:"size:255;not null" json:"key"`
-	Value     string    `gorm:"type:text" json:"value"`
-	IsBuild   bool      `gorm:"default:false" json:"is_build"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ServicePersistentStorage is a volume/mount attached to a Service.

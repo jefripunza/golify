@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -42,7 +41,7 @@ func registerProjects(r fiber.Router) {
 	// ─── Projects ──────────────────────────────────────────────────────────
 	auth.Get("/", func(c fiber.Ctx) error {
 		var rows []Project
-		if err := db.Preload("Envs.Services.Domains.Domain").Preload("Envs.Services.Networks").Preload("Envs.Services.EnvVars").Preload("Envs.Services.Storages").Preload("Envs.Domains").
+		if err := db.Preload("Envs.Services.Domains.Domain").Preload("Envs.Services.Networks").Preload("Envs.Services.Storages").Preload("Envs.Domains").
 			Order("id desc").Find(&rows).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -110,13 +109,7 @@ func registerProjects(r fiber.Router) {
 							}
 							return ns
 						}(),
-						"env_vars": func() []fiber.Map {
-							evs := make([]fiber.Map, 0, len(s.EnvVars))
-							for _, ev := range s.EnvVars {
-								evs = append(evs, fiber.Map{"id": ev.ID, "key": ev.Key, "value": ev.Value, "is_build": ev.IsBuild})
-							}
-							return evs
-						}(),
+						"env_var": s.EnvVar,
 						"storages": func() []fiber.Map {
 							ss := make([]fiber.Map, 0, len(s.Storages))
 							for _, st := range s.Storages {
@@ -202,7 +195,7 @@ func registerProjects(r fiber.Router) {
 
 	auth.Get("/:id", func(c fiber.Ctx) error {
 		var p Project
-		err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Services.EnvVars").Preload("Envs.Services.Storages").Preload("Envs.Domains").
+		err := db.Preload("Envs.Services.Domains").Preload("Envs.Services.Networks").Preload("Envs.Services.Storages").Preload("Envs.Domains").
 			First(&p, "id = ?", c.Params("id")).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(404).JSON(fiber.Map{"error": "project not found"})
@@ -269,13 +262,7 @@ func registerProjects(r fiber.Router) {
 						}
 						return ns
 					}(),
-					"env_vars": func() []fiber.Map {
-						evs := make([]fiber.Map, 0, len(s.EnvVars))
-						for _, ev := range s.EnvVars {
-							evs = append(evs, fiber.Map{"id": ev.ID, "key": ev.Key, "value": ev.Value, "is_build": ev.IsBuild})
-						}
-						return evs
-					}(),
+					"env_var": s.EnvVar,
 					"storages": func() []fiber.Map {
 						ss := make([]fiber.Map, 0, len(s.Storages))
 						for _, st := range s.Storages {
@@ -588,6 +575,7 @@ func registerProjects(r fiber.Router) {
 			ReplicasMin     *int      `json:"replicas_min"`
 			ReplicasMax     *int      `json:"replicas_max"`
 			LoadBalancer    *string   `json:"load_balancer"`
+			EnvVar          *string   `json:"env_var"`
 			}
 		if err := c.Bind().JSON(&body); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
@@ -642,6 +630,9 @@ func registerProjects(r fiber.Router) {
 		}
 		if body.LoadBalancer != nil && (*body.LoadBalancer == "round_robin" || *body.LoadBalancer == "least_conn" || *body.LoadBalancer == "k8s") {
 			svc.LoadBalancer = *body.LoadBalancer
+		}
+		if body.EnvVar != nil {
+			svc.EnvVar = *body.EnvVar
 		}
 		if err := db.Save(&svc).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -860,82 +851,6 @@ func registerProjects(r fiber.Router) {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"deleted": nid})
-	})
-
-	// ─── Environment variables (.env editor) ───────────────────────────────
-	auth.Get("/:projectId/environments/:envId/services/:serviceId/env-vars", func(c fiber.Ctx) error {
-		var rows []ServiceEnvironmentVariable
-		if err := db.Where("service_id = ?", c.Params("serviceId")).Order("created_at asc").Find(&rows).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.JSON(rows)
-	})
-
-	auth.Post("/:projectId/environments/:envId/services/:serviceId/env-vars", func(c fiber.Ctx) error {
-		var body struct {
-			Key     string `json:"key"`
-			Value   string `json:"value"`
-			IsBuild bool   `json:"is_build"`
-		}
-		if err := c.Bind().JSON(&body); err != nil || body.Key == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "key required"})
-		}
-		// key must be valid env var name
-		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(body.Key) {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid key (must be A-Za-z0-9_ starting with letter or _)"})
-		}
-		ev := ServiceEnvironmentVariable{
-			ServiceID: c.Params("serviceId"),
-			Key:       body.Key,
-			Value:     body.Value,
-			IsBuild:   body.IsBuild,
-		}
-		if err := db.Create(&ev).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.Status(201).JSON(ev)
-	})
-
-	auth.Patch("/:projectId/environments/:envId/services/:serviceId/env-vars/:varId", func(c fiber.Ctx) error {
-		var ev ServiceEnvironmentVariable
-		if err := db.First(&ev, "id = ?", c.Params("varId")).Error; err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "env var not found"})
-		}
-		var body struct {
-			Key     *string `json:"key"`
-			Value   *string `json:"value"`
-			IsBuild *bool   `json:"is_build"`
-		}
-		if err := c.Bind().JSON(&body); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid JSON"})
-		}
-		if body.Key != nil {
-			if *body.Key == "" {
-				return c.Status(400).JSON(fiber.Map{"error": "key required"})
-			}
-			if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(*body.Key) {
-				return c.Status(400).JSON(fiber.Map{"error": "invalid key"})
-			}
-			ev.Key = *body.Key
-		}
-		if body.Value != nil {
-			ev.Value = *body.Value
-		}
-		if body.IsBuild != nil {
-			ev.IsBuild = *body.IsBuild
-		}
-		if err := db.Save(&ev).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.JSON(ev)
-	})
-
-	auth.Delete("/:projectId/environments/:envId/services/:serviceId/env-vars/:varId", func(c fiber.Ctx) error {
-		vid := c.Params("varId")
-		if err := db.Delete(&ServiceEnvironmentVariable{}, "id = ?", vid).Error; err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
-		}
-		return c.JSON(fiber.Map{"deleted": vid})
 	})
 
 	// ─── Persistent storage (volumes) ──────────────────────────────────────

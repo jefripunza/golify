@@ -106,6 +106,9 @@ func ensureNamespace(ns string) error {
 
 // k8sDeployYAML renders the Deployment + Service manifest for a service.
 // image = svc.Image + ":" + tag; replicas = svc.Replicas; container port 80.
+// Environment variables from svc.EnvVar (.env-style block) are parsed and
+// injected into the container env. Comments are skipped: full-line "# ..."
+// and inline "KEY=VALUE # comment".
 func k8sDeployYAML(svc Service) string {
 	name := k8sServiceName(svc)
 	ns := k8sNamespaceForService(svc)
@@ -133,12 +136,67 @@ func k8sDeployYAML(svc Service) string {
 	b.WriteString("    spec:\n      containers:\n")
 	fmt.Fprintf(&b, "      - name: %s\n        image: %s\n", name, img)
 	b.WriteString("        ports:\n        - containerPort: 80\n")
+	if envs := parseEnvVarBlock(svc.EnvVar); len(envs) > 0 {
+		b.WriteString("        env:\n")
+		for _, kv := range envs {
+			fmt.Fprintf(&b, "        - name: %s\n          value: %q\n", kv[0], kv[1])
+		}
+	}
 	b.WriteString("---\napiVersion: v1\nkind: Service\nmetadata:\n")
 	fmt.Fprintf(&b, "  name: %s\n  namespace: %s\n", name, ns)
 	b.WriteString("spec:\n  selector:\n")
 	fmt.Fprintf(&b, "    app: %s\n", name)
 	b.WriteString("  ports:\n  - port: 80\n    targetPort: 80\n")
 	return b.String()
+}
+
+// parseEnvVarBlock parses a raw .env-style block into KEY/VALUE pairs.
+// Rules:
+//   - blank lines ignored
+//   - lines starting with '#' (after trim) are comments → skipped entirely
+//   - "KEY=VALUE # trailing comment" → comment stripped, KEY=VALUE kept
+//   - lines without '=' are ignored
+//   - surrounding whitespace on KEY and VALUE is trimmed
+//   - VALUE may be quoted ("..." or '...') — quotes are removed
+func parseEnvVarBlock(block string) [][2]string {
+	var out [][2]string
+	for _, raw := range strings.Split(block, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// strip inline comment: ' # ...' (space before #) — keep value content
+		if idx := strings.Index(line, " #"); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		eq := strings.Index(line, "=")
+		if eq <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:eq])
+		val := strings.TrimSpace(line[eq+1:])
+		// validate key: [A-Za-z_][A-Za-z0-9_]*
+		ok := len(key) > 0
+		for i, ch := range key {
+			if ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') {
+				continue
+			}
+			if i > 0 && ch >= '0' && ch <= '9' {
+				continue
+			}
+			ok = false
+			break
+		}
+		if !ok {
+			continue
+		}
+		// strip matching quotes
+		if len(val) >= 2 && (val[0] == '"' && val[len(val)-1] == '"' || val[0] == '\'' && val[len(val)-1] == '\'') {
+			val = val[1 : len(val)-1]
+		}
+		out = append(out, [2]string{key, val})
+	}
+	return out
 }
 
 // k8sApplyIngress creates/updates the Ingress for a service's domains.

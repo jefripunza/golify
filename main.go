@@ -134,7 +134,39 @@ func main() {
 			log.Fatalf("drop legacy service_domains: %v", err)
 		}
 	}
-	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &ServiceEnvironmentVariable{}, &ServicePersistentStorage{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
+	// Migrate old per-row environment variables into the single env_var TEXT
+	// column on services, then drop the old table.
+	if db.Migrator().HasTable("service_environment_variables") {
+		type oldRow struct {
+			ServiceID string
+			Key       string
+			Value     string
+		}
+		var rows []oldRow
+		if err := db.Table("service_environment_variables").Find(&rows).Error; err == nil && len(rows) > 0 {
+			// group by service, preserving insertion order
+			grouped := map[string][]string{}
+			var order []string
+			for _, r := range rows {
+				if _, ok := grouped[r.ServiceID]; !ok {
+					order = append(order, r.ServiceID)
+				}
+				grouped[r.ServiceID] = append(grouped[r.ServiceID], r.Key+"="+r.Value)
+			}
+			for _, sid := range order {
+				envVar := strings.Join(grouped[sid], "\n")
+				if err := db.Model(&Service{}).Where("id = ?", sid).Update("env_var", envVar).Error; err != nil {
+					log.Printf("[migrate] env_var backfill service %s: %v", sid, err)
+				}
+			}
+			log.Printf("[migrate] backfilled env_var for %d service(s) from service_environment_variables", len(order))
+		}
+		if err := db.Migrator().DropTable("service_environment_variables"); err != nil {
+			log.Fatalf("drop service_environment_variables: %v", err)
+		}
+		log.Println("[migrate] dropped legacy table service_environment_variables → services.env_var")
+	}
+	if err := db.AutoMigrate(&User{}, &Project{}, &Environment{}, &Service{}, &ServiceDomain{}, &ServiceNetwork{}, &ServicePersistentStorage{}, &Deployment{}, &Domain{}, &Server{}, &Source{}, &S3Storage{}, &SharedVariable{}, &Key{}, &ApiKey{}, &Team{}, &TeamMember{}); err != nil {
 		log.Fatalf("automigrate: %v", err)
 	}
 	log.Printf("sqlite ready at %s (GORM) — fresh DB, no seeder (onboarding-first)", dbPath)
