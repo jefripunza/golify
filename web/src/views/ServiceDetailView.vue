@@ -708,6 +708,7 @@ interface TermSlot {
   term: Terminal | null
   fit: FitAddon | null
   ws: WebSocket | null
+  ro: ResizeObserver | null
 }
 const termSlots = new Map<string, TermSlot>()
 
@@ -742,12 +743,29 @@ function initTerminalFor(c: LogContainer, _attempt = 0) {
   const fit = new FitAddon()
   term.loadAddon(fit)
   term.open(el)
+  // ensure the terminal can receive keyboard input — xterm only captures
+  // keys once focused; without this, typing does nothing.
+  setTimeout(() => { try { term.focus() } catch { /* noop */ } }, 80)
   // fit once the accordion body is actually laid out (v-if just rendered)
   requestAnimationFrame(() => {
     try { fit.fit() } catch { /* noop */ }
   })
+  // re-fit whenever the host resizes (window resize, rotate, sidebar toggle)
+  // — without this the terminal keeps its initial wide layout and blows the
+  // page width on phones.
+  const ro = new ResizeObserver(() => {
+    try { fit.fit() } catch { /* noop */ }
+  })
+  ro.observe(el)
   const slot: TermSlot = { term, fit, ws: null }
+  slot.ro = ro
   termSlots.set(c.id, slot)
+  // always attach the input bridge — even before WS opens. onData buffers
+  // into the WS once open; xterm key handling (typing/enter) works locally
+  // regardless of connection state.
+  term.onData((data) => {
+    if (slot.ws?.readyState === WebSocket.OPEN) slot.ws.send(data)
+  })
   attachTerminalWS(c, slot)
 }
 
@@ -785,7 +803,6 @@ function attachTerminalWS(c: LogContainer, slot: TermSlot) {
   } else {
     term?.writeln('\x1b[31mWS not available\x1b[0m')
   }
-  term?.onData((data) => slot.ws?.send(data))
 }
 function closeTermSlot(c: LogContainer) {
   const slot = termSlots.get(c.id)
@@ -795,6 +812,7 @@ function disposeTermSlot(c: LogContainer) {
   const slot = termSlots.get(c.id)
   if (slot) {
     slot.ws?.close()
+    slot.ro?.disconnect()
     slot.term?.dispose()
     termSlots.delete(c.id)
   }
@@ -802,6 +820,7 @@ function disposeTermSlot(c: LogContainer) {
 function closeAllTermSlots() {
   for (const slot of termSlots.values()) {
     slot.ws?.close()
+    slot.ro?.disconnect()
     slot.term?.dispose()
   }
   termSlots.clear()
@@ -1922,7 +1941,7 @@ const sectionIcons: Record<string, string> = {
             </span>
           </button>
           <div v-if="c.expanded" class="border-t bg-muted/30 p-2">
-            <div :id="`term-${c.id}`" class="h-80 rounded bg-[#0e1117]" />
+            <div :id="`term-${c.id}`" class="term-host h-80 w-full max-w-full overflow-hidden rounded bg-[#0e1117]" />
           </div>
         </div>
         <div v-if="!containers.length" class="mt-3 flex flex-col items-center gap-2 rounded bg-muted p-6 text-center">
@@ -1935,6 +1954,21 @@ const sectionIcons: Record<string, string> = {
 </template>
 
 <style scoped>
+/* xterm.js — constrain the terminal to its container so it never blows the
+   page width on small screens (responsive bug: accordion expanded → page
+   overflowed horizontally). */
+.term-host :deep(.xterm) {
+  width: 100% !important;
+  max-width: 100%;
+  overflow: hidden;
+}
+.term-host :deep(.xterm .xterm-viewport) {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.term-host :deep(.xterm-screen) {
+  width: 100% !important;
+}
 /* Hide number input spinners (Chrome/Safari/Edge + Firefox) */
 .number-input-no-spin::-webkit-outer-spin-button,
 .number-input-no-spin::-webkit-inner-spin-button {
