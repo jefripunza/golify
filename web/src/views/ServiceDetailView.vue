@@ -752,9 +752,19 @@ function initTerminalFor(c: LogContainer, _attempt = 0) {
   })
   // re-fit whenever the host resizes (window resize, rotate, sidebar toggle)
   // — without this the terminal keeps its initial wide layout and blows the
-  // page width on phones.
-  const ro = new ResizeObserver(() => {
-    try { fit.fit() } catch { /* noop */ }
+  // page width on phones. Debounced: fit() resizes the xterm which itself
+  // triggers another ResizeObserver callback → without debounce this loops
+  // forever ("ResizeObserver loop completed with undelivered notifications").
+  let roTimer: ReturnType<typeof setTimeout> | null = null
+  let roLastW = 0
+  const ro = new ResizeObserver((entries) => {
+    const w = entries[0]?.contentRect?.width ?? 0
+    if (Math.abs(w - roLastW) < 4) return // no meaningful change — skip
+    roLastW = w
+    if (roTimer) clearTimeout(roTimer)
+    roTimer = setTimeout(() => {
+      try { fit.fit() } catch { /* noop */ }
+    }, 120)
   })
   ro.observe(el)
   const slot: TermSlot = { term, fit, ws: null }

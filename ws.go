@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fasthttp/websocket"
 	"github.com/valyala/fasthttp"
@@ -201,22 +202,34 @@ type wsWriter struct {
 	conn *websocket.Conn
 }
 
-// writeWS serializes ALL writes to a ws conn. wsWriter and any other
-// writer (e.g. "[process exited]" after cmd.Wait) must go through this —
-// fasthttp/websocket panics on concurrent WriteMessage calls.
+// Per-connection write mutexes. fasthttp/websocket panics on concurrent
+// WriteMessage calls to the SAME conn, so we need one lock per conn — but a
+// GLOBAL lock is deadly: one stuck connection (e.g. a Vite dev-proxy WS that
+// half-closed into FIN-WAIT-2) blocks ALL websocket traffic on the server
+// (terminal, logs, realtime). With per-conn locks a stuck conn only freezes
+// itself.
+var wsMuByConn sync.Map // *websocket.Conn -> *sync.Mutex
+
+func wsLockFor(conn *websocket.Conn) *sync.Mutex {
+	mu, _ := wsMuByConn.LoadOrStore(conn, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+// writeWS serializes writes to a SINGLE ws conn and enforces a write
+// deadline so a dead/half-closed conn cannot hang the writer forever.
 func writeWS(conn *websocket.Conn, p []byte) error {
-	wsmu.Lock()
-	defer wsmu.Unlock()
+	mu := wsLockFor(conn)
+	mu.Lock()
+	defer mu.Unlock()
 	// WriteMessage panics if the conn is closed underneath us — catch it.
 	defer func() {
 		if r := recover(); r != nil {
 			// ignore: client disconnected
 		}
 	}()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return conn.WriteMessage(websocket.TextMessage, p)
 }
-
-var wsmu sync.Mutex
 
 func (w *wsWriter) Write(p []byte) (int, error) {
 	if err := writeWS(w.conn, p); err != nil {

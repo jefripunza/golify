@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os/exec"
@@ -318,11 +319,13 @@ func markDeployDone(deployID, status string) {
 func authWS(ctx *fasthttp.RequestCtx) bool {
 	tok := string(ctx.QueryArgs().Peek("token"))
 	if tok == "" {
+		log.Printf("[ws-auth] missing token (path=%s)", ctx.Path())
 		ctx.SetStatusCode(http.StatusUnauthorized)
 		ctx.SetBodyString("missing token")
 		return false
 	}
 	if _, err := parseToken(tok); err != nil {
+		log.Printf("[ws-auth] invalid token len=%d err=%v (path=%s)", len(tok), err, ctx.Path())
 		ctx.SetStatusCode(http.StatusUnauthorized)
 		ctx.SetBodyString("invalid token")
 		return false
