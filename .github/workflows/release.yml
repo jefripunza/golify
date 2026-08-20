@@ -12,9 +12,42 @@ env:
   GO_VERSION: '1.25'
 
 jobs:
-  build:
-    name: Build & package (${{ matrix.name }})
+  # ─── 1) Frontend: build Vue 3 → web/dist (1 job) ─────────────────────────
+  frontend:
+    name: Build frontend (Vue 3 → web/dist)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm install --legacy-peer-deps
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+      - name: Upload web/dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+
+  # ─── 2) Backend: compile per-OS, menunggu FE dist (matrix 7 OS) ──────────
+  backend:
+    name: Build backend (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [frontend]
     strategy:
       fail-fast: false
       matrix:
@@ -53,22 +86,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Download FE dist (web-dist artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Verify FE dist exists
+        run: |
+          test -f web/dist/index.html && echo "FE dist OK: $(ls web/dist | wc -l) files"
+          test -d web/dist/assets && echo "assets OK: $(ls web/dist/assets | wc -l) files"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: Stub web/dist (go:embed)
-        run: |
-          mkdir -p web/dist
-          echo '<!doctype html><html><body>placeholder</body></html>' > web/dist/index.html
-
-      - name: Build frontend (Vue 3 → web/dist)
-        working-directory: web
-        run: |
-          npm ci --legacy-peer-deps
-          npm run build
 
       - name: Download modules
         run: go mod download
@@ -81,19 +114,21 @@ jobs:
         run: |
           BIN="golify-${{ matrix.name }}${{ matrix.ext }}"
           go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o "$BIN" .
+          file "$BIN" || true
           echo "BIN=$BIN" >> "$GITHUB_ENV"
 
-      - name: Upload artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: golify-${{ matrix.name }}
           path: golify-${{ matrix.name }}${{ matrix.ext }}
           if-no-files-found: error
 
-  package:
-    name: Package .deb / .rpm / .apk
+  # ─── 3) Release: kumpulkan semua binary + AI notes + publish (1 node) ────
+  release:
+    name: Package & publish release
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [frontend, backend]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,40 +145,34 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
-      - name: Download linux-amd64 binary
+      # Download semua binary BE dari semua OS
+      - name: Download all backend binaries
         uses: actions/download-artifact@v4
         with:
-          name: golify-linux-amd64
-          path: dist/
+          path: assets/
+          merge-multiple: true
 
-      - name: Make binary executable
-        run: chmod +x dist/golify-linux-amd64
+      - name: List assets
+        run: ls -la assets/
 
+      # Buat paket .deb / .rpm / .apk dari binary linux-amd64
       - name: Package .deb / .rpm / .apk
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          mkdir -p packages
+          # sediakan dist/ untuk nfpm (src: dist/golify-linux-amd64)
+          mkdir -p dist packages
+          cp assets/golify-linux-amd64 dist/golify-linux-amd64
+          chmod +x dist/golify-linux-amd64
+          # versi di .nfpm.yaml harus sesuai tag — tulis ulang versi
+          sed -i "s/^version: .*/version: \"$VERSION\"/" .nfpm.yaml
           nfpm package --config .nfpm.yaml --packager deb --target "packages/golify_${VERSION}_amd64.deb"
           nfpm package --config .nfpm.yaml --packager rpm --target "packages/golify-${VERSION}-1.x86_64.rpm"
           nfpm package --config .nfpm.yaml --packager apk --target "packages/golify_${VERSION}_amd64.apk"
+          # gabungkan paket ke assets/
+          cp packages/* assets/
 
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: packages
-          path: packages/
-          if-no-files-found: error
-
-  release:
-    name: Generate AI notes & publish release
-    runs-on: ubuntu-latest
-    needs: [build, package]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+      # Generate release notes via AI (9Router)
       - name: Collect changelog (git log since previous tag)
         id: changelog
         run: |
@@ -167,19 +196,24 @@ jobs:
             printf '## What Changed\n\n' > /tmp/notes.md
             cat /tmp/changelog.txt >> /tmp/notes.md
           fi
+          echo "notes length: $(wc -c < /tmp/notes.md)"
           cat /tmp/notes.md
 
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets/
-          merge-multiple: true
-
-      - name: Create GitHub Release
+      - name: Create GitHub Release (semua binary + paket)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body_path: /tmp/notes.md
-          files: release-assets/**
+          files: |
+            assets/golify-windows-amd64.exe
+            assets/golify-darwin-amd64
+            assets/golify-darwin-arm64
+            assets/golify-linux-amd64
+            assets/golify-linux-arm64
+            assets/golify-linux-386
+            assets/golify-freebsd-amd64
+            assets/golify_*_amd64.deb
+            assets/golify-*-1.x86_64.rpm
+            assets/golify_*_amd64.apk
           generate_release_notes: false
