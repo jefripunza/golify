@@ -15,7 +15,7 @@ jobs:
   # ─── 1) Frontend: build Vue 3 → web/dist (1 job) ─────────────────────────
   frontend:
     name: Build frontend (Vue 3 → web/dist)
-    runs-on: ubuntu-latest
+    runs-on: device
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,7 +46,7 @@ jobs:
   # ─── 2) Backend: compile per-OS, menunggu FE dist (matrix 7 OS) ──────────
   backend:
     name: Build backend (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: device
     needs: [frontend]
     strategy:
       fail-fast: false
