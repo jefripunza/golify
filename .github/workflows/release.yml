@@ -43,44 +43,11 @@ jobs:
           path: web/dist
           if-no-files-found: error
 
-  # ─── 2) Backend: compile per-OS, menunggu FE dist (matrix 7 OS) ──────────
+  # ─── 2) Backend: compile 7 OS PARALEL dalam 1 job (device 24 core) ────────
   backend:
-    name: Build backend (${{ matrix.name }})
+    name: Build backend (7 OS paralel)
     runs-on: device
     needs: [frontend]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows-amd64
-            goos: windows
-            goarch: amd64
-            ext: .exe
-          - name: darwin-amd64
-            goos: darwin
-            goarch: amd64
-            ext: ''
-          - name: darwin-arm64
-            goos: darwin
-            goarch: arm64
-            ext: ''
-          - name: linux-amd64
-            goos: linux
-            goarch: amd64
-            ext: ''
-          - name: linux-arm64
-            goos: linux
-            goarch: arm64
-            ext: ''
-          - name: linux-386
-            goos: linux
-            goarch: 386
-            ext: ''
-          - name: freebsd-amd64
-            goos: freebsd
-            goarch: amd64
-            ext: ''
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -106,22 +73,33 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      - name: Build ${{ matrix.name }}
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+      - name: Build 7 OS secara paralel (background & + wait)
         run: |
-          BIN="golify-${{ matrix.name }}${{ matrix.ext }}"
-          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o "$BIN" .
-          file "$BIN" || true
-          echo "BIN=$BIN" >> "$GITHUB_ENV"
+          set -e
+          mkdir -p dist
+          build() {
+            local os="$1" arch="$2" ext="$3"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+              -o "dist/golify-$os-$arch$ext" .
+            echo "✅ $os/$arch: $(ls -la dist/golify-$os-$arch$ext | awk '{print $5}') bytes"
+          }
+          build windows amd64 .exe &
+          build darwin amd64 "" &
+          build darwin arm64 "" &
+          build linux amd64 "" &
+          build linux arm64 "" &
+          build linux 386 "" &
+          build freebsd amd64 "" &
+          wait
+          echo "=== Semua binary selesai ==="
+          ls -la dist/
 
-      - name: Upload binary artifact
+      - name: Upload semua binary (1 artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: golify-${{ matrix.name }}
-          path: golify-${{ matrix.name }}${{ matrix.ext }}
+          name: golify-binaries
+          path: dist/
           if-no-files-found: error
 
   # ─── 3) Release: kumpulkan semua binary + AI notes + publish (1 node) ────
@@ -145,10 +123,11 @@ jobs:
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
-      # Download semua binary BE dari semua OS
+      # Download semua binary BE (artifact gabungan dari 7 OS)
       - name: Download all backend binaries
         uses: actions/download-artifact@v4
         with:
+          name: golify-binaries
           path: assets/
           merge-multiple: true
 

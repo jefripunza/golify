@@ -138,7 +138,7 @@ Catatan:
 - ky v2 + Pinia Colada 1.4
 - `@lucide/vue` icons
 - Components terpasang: Button, Card, Input, Textarea, Label, Badge
-- Vite dev proxy `/api` → `http://127.0.0.1:20001`
+- Vite dev proxy `/api` → `http://127.0.0.1:3000`
 - Existing views: Home (Dashboard placeholder), Messages, Send (legacy notif)
 - Build script: `npm run build` (vue-tsc type-check step di-disable karena konflik typing dengan Pinia Colada di template)
 

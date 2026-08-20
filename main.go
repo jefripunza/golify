@@ -48,11 +48,10 @@ import (
 var webDist embed.FS
 
 const (
-	portBE    = ":20000" // BE Go: API + WS dashboard (WS prefix /api/ws/*)
-	portHTTP  = ":20001" // proxy HTTP + ACME → FE :20003
-	portHTTPS = ":20002" // proxy HTTPS → FE :20003
-	portFE    = ":20003" // FE Vue Vite (dev server, HMR ws sendiri)
-	portDual  = ":8080"  // proxy all-in-one (HTTP+HTTPS+ACME) → FE :20003
+	portBE    = ":3000"  // BE Go: API + WS dashboard (WS prefix /api/ws/*)
+	portHTTP  = ":80"    // proxy HTTP + ACME
+	portHTTPS = ":443"   // proxy HTTPS
+	portDual  = ":8080"  // proxy all-in-one (HTTP+HTTPS+ACME)
 	dataDir   = "data"
 )
 
@@ -179,8 +178,8 @@ func main() {
 	startSystemWorker()
 	log.Println("system analytics worker started (1 Hz)")
 
-	// :20000 — BE Go: SPA (embed) + API + WS dashboard (WS prefix /api/ws/*).
-	// Inilah satu-satunya backend dashboard. Real proxy (20001/20002/8080)
+	// :3000 — BE Go: SPA (embed) + API + WS dashboard (WS prefix /api/ws/*).
+	// Inilah satu-satunya backend dashboard. Real proxy (80/443/8080)
 	// adalah server standalone — TIDAK forward ke sini. FE Vite (20003)
 	// proxy /api ke sini (vite proxy).
 	beApp := rootSPA("be")
@@ -196,7 +195,7 @@ func main() {
 		}
 	}()
 
-	// :20001 — real proxy HTTP + ACME (standalone, no API)
+	// :80 — real proxy HTTP + ACME (standalone, no API)
 	httpProxy := newProxyApp("http-proxy", true)
 	bindHTTP := envOr("GOTIFY_HTTP", portHTTP)
 	lnHTTP, err := net.Listen("tcp", bindHTTP)
@@ -210,7 +209,7 @@ func main() {
 		}
 	}()
 
-	// :20002 — real proxy HTTPS (standalone, no API)
+	// :443 — real proxy HTTPS (standalone, no API)
 	httpsProxy := newProxyApp("https-proxy", true)
 	bindHTTPS := envOr("GOTIFY_HTTPS", portHTTPS)
 	lnHTTPS, err := tls.Listen("tcp", bindHTTPS, buildTLSConfig())
@@ -254,7 +253,7 @@ func main() {
 
 // newProxyApp builds a REAL proxy: a standalone server that serves the SPA
 // (static build, embedded) + ACME challenges + TLS + domain gate. It does
-// NOT run the dashboard API (that lives ONLY on the BE :20000) and does NOT
+// NOT run the dashboard API (that lives ONLY on the BE :3000) and does NOT
 // forward anywhere — it is its own backend, separate from the dashboard BE.
 func newProxyApp(label string, gate bool) *fiber.App {
 	app := newFiber(label)
@@ -316,7 +315,7 @@ func acmeChallenge(c fiber.Ctx) error {
 // ----- SPA mounting --------------------------------------------------------
 
 // rootSPA builds the BE app: full SPA (embed) + API + WS handler (via
-// serveUnified). It is used ONLY for the BE port :20000. Real proxy ports
+// serveUnified). It is used ONLY for the BE port :3000. Real proxy ports
 // use newProxyApp (pure forwarder) instead.
 func rootSPA(label string) *fiber.App {
 	app := newFiber(label)

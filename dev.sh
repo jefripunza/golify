@@ -8,7 +8,7 @@
 #   ./dev.sh --be     → backend only (no frontend dev server)
 #
 # Frontend: http://localhost:5173 (or VITE_DEV_PORT in web/.env)
-# Backend:  ports from .env (default 20001/20002/20003/8080)
+# Backend:  ports from .env (default 3000/80/443/8080)
 set -euo pipefail
 
 cd "$(dirname "$0")"

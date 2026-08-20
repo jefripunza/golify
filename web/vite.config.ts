@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   // Load web/.env (VITE_ prefix). Change ports/targets without touching code.
   const env = loadEnv(mode, process.cwd(), '')
   const devPort = Number(env.VITE_DEV_PORT || 20003)
-  const apiTarget = env.VITE_DEV_PROXY_API || 'http://127.0.0.1:20000'
+  const apiTarget = env.VITE_DEV_PROXY_API || 'http://127.0.0.1:3000'
 
   return {
     plugins: [

@@ -14,8 +14,8 @@ WorkingDirectory=/var/lib/golify
 ExecStart=/usr/local/bin/golify
 Restart=always
 RestartSec=5
-# Bind to all interfaces; TLS/ACME handled internally on 20001/20002.
-Environment=GOLIFY_PORT=20000
+# Bind to all interfaces; TLS/ACME handled internally on 80/443.
+Environment=GOLIFY_PORT=3000
 
 [Install]
 WantedBy=multi-user.target
