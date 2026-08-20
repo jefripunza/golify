@@ -64,6 +64,12 @@ jobs:
           mkdir -p web/dist
           echo '<!doctype html><html><body>placeholder</body></html>' > web/dist/index.html
 
+      - name: Build frontend (Vue 3 → web/dist)
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       - name: Download modules
         run: go mod download
 

@@ -1,0 +1,42 @@
+# nfpm packaging config — used by .github/workflows/release.yml to build
+# .deb (Debian/Ubuntu), .rpm (RHEL/CentOS/Fedora) and .apk (Alpine).
+name: golify
+arch: amd64
+platform: linux
+version: "0.0.2"
+section: utils
+priority: optional
+maintainer: Jefri Herdi Triyanto <jefripunza@gmail.com>
+description: |
+  Golify — self-hosted application deployment platform.
+  Deploy services (applications, databases, tools) to Kubernetes
+  with domain management, HTTPS, environment variables, logs and
+  a built-in terminal. Single static binary (Go + embedded Vue SPA).
+homepage: https://golify.jefripunza.com
+license: MIT
+
+contents:
+  - src: dist/golify-linux-amd64
+    dst: /usr/local/bin/golify
+    file_info:
+      mode: 0755
+
+  - src: .nfpm.yaml
+    dst: /etc/golify/nfpm.yaml
+    type: config
+
+  - src: data/
+    dst: /var/lib/golify/data
+    type: dir
+
+deb:
+  scripts:
+    rules: packaging/postinstall.sh
+
+rpm:
+  scripts:
+    posttrans: packaging/postinstall.sh
+
+apk:
+  # APK (Alpine) has no systemd; scripts unsupported in this nfpm build.
+  {}

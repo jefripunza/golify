@@ -59,6 +59,10 @@ const (
 var (
 	db     *gorm.DB
 	jwtKey = loadOrCreateJwtKey()
+
+	// version is injected at build time via -ldflags "-X main.version=..."
+	// (see .github/workflows/release.yml). Defaults to "dev" for local builds.
+	version = "dev"
 )
 
 // jwtKeyFile persists the JWT signing key so tokens survive restarts.
