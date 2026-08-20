@@ -4,7 +4,6 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import * as monaco from 'monaco-editor'
 import {
   Card,
   CardContent,
@@ -226,56 +225,66 @@ function addEnvVarRow() {
 
 // ─── Monaco .env editor ─────────────────────────────────────────────────
 const envEditorEl = ref<HTMLElement | null>(null)
-let envEditor: monaco.editor.IStandaloneCodeEditor | null = null
+let envEditor: { getValue(): string; setValue(v: string): void; onDidChangeModelContent(cb: () => void): void; dispose(): void } | null = null
 let envEditorInitialized = false
+let monacoPromise: Promise<typeof import('monaco-editor')> | null = null
 
 // .env language definition — highlight keys cyan, values orange/green,
 // comments gray (like the 9Router .env screenshot the user shared).
-monaco.languages.register({ id: 'dotenv' })
-monaco.languages.setMonarchTokensProvider('dotenv', {
-  tokenizer: {
-    root: [
-      [/^#.*$/, 'comment'],
-      [/^\s*[A-Za-z_][A-Za-z0-9_]*/, 'variable'],
-      [/=/, 'operator'],
-      [/".*"|'.*'/, 'string.quote'],
-      [/\d+/, 'number'],
-      [/https?:\/\/\S+/, 'url'],
-      [/true|false/, 'boolean'],
-      [/.*/, 'string'],
+// Dipanggil sekali setelah monaco di-import (lazy).
+function setupMonacoDotenv(m: typeof import('monaco-editor')) {
+  m.languages.register({ id: 'dotenv' })
+  m.languages.setMonarchTokensProvider('dotenv', {
+    tokenizer: {
+      root: [
+        [/^#.*$/, 'comment'],
+        [/^\s*[A-Za-z_][A-Za-z0-9_]*/, 'variable'],
+        [/=/, 'operator'],
+        [/".*"|'.*'/, 'string.quote'],
+        [/\d+/, 'number'],
+        [/https?:\/\/\S+/, 'url'],
+        [/true|false/, 'boolean'],
+        [/.*/, 'string'],
+      ],
+    },
+  })
+  m.editor.defineTheme('golify-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
+      { token: 'variable', foreground: '22d3ee' },   // cyan
+      { token: 'operator', foreground: 'a1a1aa' },
+      { token: 'string', foreground: 'fbbf24' },     // orange
+      { token: 'string.quote', foreground: '4ade80' }, // green
+      { token: 'number', foreground: 'f472b6' },
+      { token: 'url', foreground: '4ade80' },        // green URLs
+      { token: 'boolean', foreground: 'fbbf24' },    // orange booleans
     ],
-  },
-})
-monaco.editor.defineTheme('golify-dark', {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-    { token: 'variable', foreground: '22d3ee' },   // cyan
-    { token: 'operator', foreground: 'a1a1aa' },
-    { token: 'string', foreground: 'fbbf24' },     // orange
-    { token: 'string.quote', foreground: '4ade80' }, // green
-    { token: 'number', foreground: 'f472b6' },
-    { token: 'url', foreground: '4ade80' },        // green URLs
-    { token: 'boolean', foreground: 'fbbf24' },    // orange booleans
-  ],
-  colors: {
-    'editor.background': '#0a0a0a',
-    'editor.foreground': '#e4e4e7',
-    'editorLineNumber.foreground': '#52525b',
-    'editorLineNumber.activeForeground': '#a1a1aa',
-    'editorCursor.foreground': '#22d3ee',
-    'editor.selectionBackground': '#155e7533',
-    'editor.lineHighlightBackground': '#18181b',
-    'editorIndentGuide.background1': '#27272a',
-  },
-})
+    colors: {
+      'editor.background': '#0a0a0a',
+      'editor.foreground': '#e4e4e7',
+      'editorLineNumber.foreground': '#52525b',
+      'editorLineNumber.activeForeground': '#a1a1aa',
+      'editorCursor.foreground': '#22d3ee',
+      'editor.selectionBackground': '#155e7533',
+      'editor.lineHighlightBackground': '#18181b',
+      'editorIndentGuide.background1': '#27272a',
+    },
+  })
+}
 
 function initEnvEditorMonaco() {
   if (envEditorInitialized) return
   if (!envEditorEl.value) return // elemen belum render — coba lagi nanti
   envEditorInitialized = true
-  envEditor = monaco.editor.create(envEditorEl.value, {
+  // Lazy-load monaco-editor (chunk terpisah ~4MB, hanya dimuat saat
+  // section Environment Variables dibuka)
+  if (!monacoPromise) monacoPromise = import('monaco-editor')
+  monacoPromise.then((m) => {
+    if (!envEditorEl.value) return
+    setupMonacoDotenv(m)
+    envEditor = m.editor.create(envEditorEl.value, {
     value: envText.value,
     language: 'dotenv',
     theme: 'golify-dark',
@@ -291,8 +300,9 @@ function initEnvEditorMonaco() {
     tabSize: 2,
     scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
   })
-  envEditor.onDidChangeModelContent(() => {
-    envText.value = envEditor?.getValue() ?? ''
+    envEditor.onDidChangeModelContent(() => {
+      envText.value = envEditor?.getValue() ?? ''
+    })
   })
 }
 
@@ -305,11 +315,12 @@ watch(activeSection, (s) => {
     const attempt = () => {
       initEnvEditor() // re-read fresh env_var from store
       initEnvEditorMonaco()
+      // editor dibuat async (monaco lazy-loaded) — retry sampai terisi
       if (envEditor) {
         envEditor.setValue(envText.value)
         return
       }
-      if (++tries < 10) setTimeout(attempt, 80)
+      if (++tries < 15) setTimeout(attempt, 100)
     }
     nextTick(attempt)
   }

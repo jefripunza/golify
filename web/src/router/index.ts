@@ -1,28 +1,31 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getAuth } from '@/lib/api'
 
-// Static imports (NO lazy loading) — all views are bundled up-front.
-import AuthLayout from '@/layouts/AuthLayout.vue'
-import AppLayout from '@/layouts/AppLayout.vue'
-import LoginView from '@/views/LoginView.vue'
-import OnboardingView from '@/views/OnboardingView.vue'
-import DashboardView from '@/views/DashboardView.vue'
-import DomainsView from '@/views/DomainsView.vue'
-import ProjectsView from '@/views/ProjectsView.vue'
-import ProjectDetailView from '@/views/ProjectDetailView.vue'
-import EnvDetailView from '@/views/EnvDetailView.vue'
-import ServiceDetailView from '@/views/ServiceDetailView.vue'
-import DeployDetailView from '@/views/DeployDetailView.vue'
-import ServersView from '@/views/ServersView.vue'
-import ServerDetailView from '@/views/ServerDetailView.vue'
-import SourcesView from '@/views/SourcesView.vue'
-import S3View from '@/views/S3View.vue'
-import SharedVarsView from '@/views/SharedVarsView.vue'
-import KeysView from '@/views/KeysView.vue'
-import ApiKeysView from '@/views/ApiKeysView.vue'
-import TeamsView from '@/views/TeamsView.vue'
-import TeamDetailView from '@/views/TeamDetailView.vue'
-import NotFoundView from '@/views/NotFoundView.vue'
+// ── Lazy-loaded views ───────────────────────────────────────────────────────
+// Setiap view di-chunk terpisah (code-split otomatis) — hanya dimuat saat
+// route dikunjungi. View berat (Dashboard/Highcharts, ServiceDetail/Monaco)
+// tidak lagi membebani bundle awal.
+const AuthLayout = () => import('@/layouts/AuthLayout.vue')
+const AppLayout = () => import('@/layouts/AppLayout.vue')
+const LoginView = () => import('@/views/LoginView.vue')
+const OnboardingView = () => import('@/views/OnboardingView.vue')
+const DashboardView = () => import('@/views/DashboardView.vue')
+const DomainsView = () => import('@/views/DomainsView.vue')
+const ProjectsView = () => import('@/views/ProjectsView.vue')
+const ProjectDetailView = () => import('@/views/ProjectDetailView.vue')
+const EnvDetailView = () => import('@/views/EnvDetailView.vue')
+const ServiceDetailView = () => import('@/views/ServiceDetailView.vue')
+const DeployDetailView = () => import('@/views/DeployDetailView.vue')
+const ServersView = () => import('@/views/ServersView.vue')
+const ServerDetailView = () => import('@/views/ServerDetailView.vue')
+const SourcesView = () => import('@/views/SourcesView.vue')
+const S3View = () => import('@/views/S3View.vue')
+const SharedVarsView = () => import('@/views/SharedVarsView.vue')
+const KeysView = () => import('@/views/KeysView.vue')
+const ApiKeysView = () => import('@/views/ApiKeysView.vue')
+const TeamsView = () => import('@/views/TeamsView.vue')
+const TeamDetailView = () => import('@/views/TeamDetailView.vue')
+const NotFoundView = () => import('@/views/NotFoundView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
