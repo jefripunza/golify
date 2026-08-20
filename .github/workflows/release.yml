@@ -67,7 +67,7 @@ jobs:
       - name: Build frontend (Vue 3 → web/dist)
         working-directory: web
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           npm run build
 
       - name: Download modules
