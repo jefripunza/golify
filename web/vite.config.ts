@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        // Alias langsung ke esm/vs Monaco — bypass exports map
+        // ("monaco-editor/*" → "./esm/vs/*.js" bikin double path saat
+        // import worker). Dipakai oleh src/lib/monacoSetup.ts.
+        'monaco-worker': fileURLToPath(new URL('./node_modules/monaco-editor/esm/vs', import.meta.url)),
       },
     },
     optimizeDeps: {

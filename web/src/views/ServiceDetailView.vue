@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { useProjectsStore } from '@/stores'
 import { getAuth, authed } from '@/lib/api'
+import { ensureMonacoEnv } from '@/lib/monacoSetup'
 import type { Deployment, Service } from '@/lib/types'
 import {
   Play,
@@ -280,7 +281,10 @@ function initEnvEditorMonaco() {
   envEditorInitialized = true
   // Lazy-load monaco-editor (chunk terpisah ~4MB, hanya dimuat saat
   // section Environment Variables dibuka)
-  if (!monacoPromise) monacoPromise = import('monaco-editor')
+  if (!monacoPromise) {
+    ensureMonacoEnv() // set self.MonacoEnvironment sebelum editor dibuat
+    monacoPromise = import('monaco-editor')
+  }
   monacoPromise.then((m) => {
     if (!envEditorEl.value) return
     setupMonacoDotenv(m)
