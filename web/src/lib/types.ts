@@ -116,6 +116,27 @@ export interface Server {
   disk: number // % used
   containers: number
   keyId?: ID
+
+  // ── SSH connection ─────────────────────────────
+  sshUser: string
+  sshPort: number
+  sshAuthType: 'password' | 'private_key'
+  sshPassword?: string // hanya saat input (tidak pernah dikirim balik)
+  sshPrivateKey?: string // hanya saat input
+  sshPublicKey?: string
+
+  // ── Kubernetes / cluster join ─────────────────
+  kubeEnabled: boolean
+  kubeRole: 'control-plane' | 'worker' | 'etcd'
+  kubeVersion: string
+  kubeJoinCommand: string
+  kubeCluster: string
+
+  // ── Meta ──────────────────────────────────────
+  labels: string // JSON object {k:v}
+  notes: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type SourceProvider =

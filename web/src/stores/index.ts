@@ -86,6 +86,22 @@ function mapServer(r: any): Server {
     disk: r.disk ?? 0,
     containers: r.containers ?? 0,
     keyId: r.key_id ? String(r.key_id) : undefined,
+    // SSH
+    sshUser: r.ssh_user ?? 'root',
+    sshPort: r.ssh_port ?? 22,
+    sshAuthType: r.ssh_auth_type ?? 'password',
+    sshPublicKey: r.ssh_public_key ?? '',
+    // Kube
+    kubeEnabled: r.kube_enabled ?? false,
+    kubeRole: r.kube_role ?? 'worker',
+    kubeVersion: r.kube_version ?? '',
+    kubeJoinCommand: r.kube_join_command ?? '',
+    kubeCluster: r.kube_cluster ?? '',
+    // Meta
+    labels: r.labels ?? '{}',
+    notes: r.notes ?? '',
+    createdAt: r.created_at ?? '',
+    updatedAt: r.updated_at ?? '',
   }
 }
 function mapSource(d: any): Source {
@@ -427,7 +443,36 @@ export const useServersStore = defineStore('servers', () => {
   const { items: servers, pending, error, refresh } = useResourceList<Server>('api/v1/servers', mockServers, mapServer)
   const onlineCount = computed(() => servers.value.filter((s) => s.status === 'online').length)
   function get(id: string) { return servers.value.find((s) => s.id === id) }
-  return { servers, onlineCount, pending, error, get, refresh }
+
+  async function create(input: Partial<Server>) {
+    const created = await authed().post('api/v1/servers', { json: input }).json<any>()
+    servers.value = [mapServer(created), ...servers.value]
+    return mapServer(created)
+  }
+
+  async function update(id: string, input: Partial<Server>) {
+    const updated = await authed().patch(`api/v1/servers/${id}`, { json: input }).json<any>()
+    const idx = servers.value.findIndex((s) => s.id === id)
+    if (idx >= 0) servers.value[idx] = mapServer(updated)
+    return mapServer(updated)
+  }
+
+  async function remove(id: string) {
+    await authed().delete(`api/v1/servers/${id}`).json<any>()
+    servers.value = servers.value.filter((s) => s.id !== id)
+  }
+
+  /** Test koneksi SSH — return {ok, info?, error?} */
+  async function test(id: string) {
+    return await authed().post(`api/v1/servers/${id}/test`).json<any>()
+  }
+
+  /** Ambil stats real via SSH */
+  async function stats(id: string) {
+    return await authed().get(`api/v1/servers/${id}/stats`).json<any>()
+  }
+
+  return { servers, onlineCount, pending, error, get, create, update, remove, test, stats, refresh }
 })
 
 // ─── Sources ───────────────────────────────────────────────────────────────

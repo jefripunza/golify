@@ -18,12 +18,17 @@ func registerInfra(r fiber.Router) {
 		if err := db.Order("id desc").Find(&rows).Error; err != nil {
 			return ctx.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
+		for i := range rows {
+			sanitizeServer(&rows[i])
+		}
 		return ctx.JSON(rows)
 	})
-	c.Post("/servers", func(ctx fiber.Ctx) error { return createGeneric(ctx, &Server{}) })
+	c.Post("/servers", registerServer)
 	c.Get("/servers/:id", func(ctx fiber.Ctx) error { return getGeneric(ctx, &Server{}) })
-	c.Patch("/servers/:id", func(ctx fiber.Ctx) error { return patchGeneric(ctx, &Server{}) })
+	c.Patch("/servers/:id", updateServer)
 	c.Delete("/servers/:id", func(ctx fiber.Ctx) error { return deleteGeneric(ctx, &Server{}) })
+	c.Post("/servers/:id/test", testServerSSH)
+	c.Get("/servers/:id/stats", serverStats)
 
 	c.Get("/sources", func(ctx fiber.Ctx) error {
 		var rows []Source
@@ -103,6 +108,10 @@ func createGeneric(ctx fiber.Ctx, out interface{}) error {
 func getGeneric(ctx fiber.Ctx, model interface{}) error {
 	if err := db.First(model, "id = ?", ctx.Params("id")).Error; err != nil {
 		return ctx.Status(404).JSON(fiber.Map{"error": "not found"})
+	}
+	// Server punya secret — zero-kan sebelum dikirim ke FE.
+	if s, ok := model.(*Server); ok {
+		sanitizeServer(s)
 	}
 	return ctx.JSON(model)
 }

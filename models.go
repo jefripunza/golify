@@ -180,6 +180,8 @@ type Domain struct {
 // ─── Infrastructure / Security models (menus Servers..Teams) ──────────────
 
 // Server is a deploy target registered in the dashboard.
+// Diperluas: koneksi SSH (user/port/auth), status Kubernetes (join cluster),
+// label & catatan. Semua server dikelola dari satu dashboard Golify.
 type Server struct {
 	ID          UUID      `gorm:"primaryKey;size:36" json:"id"`
 	Name        string    `gorm:"size:255;not null" json:"name"`
@@ -194,8 +196,30 @@ type Server struct {
 	Disk        float64   `gorm:"default:0" json:"disk"`         // % used
 	Containers  int       `gorm:"default:0" json:"containers"`
 	KeyID       UUID      `gorm:"default:'';size:36" json:"key_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+
+	// ── SSH connection ─────────────────────────────────────────────
+	SSHUser     string `gorm:"size:64;default:'root'" json:"ssh_user"`
+	SSHPort     int    `gorm:"default:22" json:"ssh_port"`
+	SSHAuthType string `gorm:"size:16;default:'password'" json:"ssh_auth_type"` // password | private_key
+	// Secret ter-enkripsi (AES-GCM). Tidak pernah dikirim balik ke FE.
+	SSHPassword   string `gorm:"size:4096;default:''" json:"-"` // encrypted
+	SSHPrivateKey string `gorm:"size:8192;default:''" json:"-"` // encrypted
+	// SSH public key untuk auth (opsional, disimpan plaintext — bukan secret).
+	SSHPublicKey string `gorm:"size:4096;default:''" json:"ssh_public_key"`
+
+	// ── Kubernetes / cluster join ─────────────────────────────────
+	KubeEnabled     bool   `gorm:"not null;default:false" json:"kube_enabled"`
+	KubeRole        string `gorm:"size:16;default:'worker'" json:"kube_role"` // control-plane | worker | etcd
+	KubeVersion     string `gorm:"size:64;default:''" json:"kube_version"`
+	KubeJoinCommand string `gorm:"size:4096;default:''" json:"kube_join_command"`
+	// Cluster ini di-join (nama cluster target, misal "golify")
+	KubeCluster string `gorm:"size:128;default:''" json:"kube_cluster"`
+
+	// ── Meta ───────────────────────────────────────────────────────
+	Labels    string    `gorm:"size:2048;default:''" json:"labels"` // JSON object {k:v}
+	Notes     string    `gorm:"size:4096;default:''" json:"notes"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Source is a VCS repo / git provider connection.
